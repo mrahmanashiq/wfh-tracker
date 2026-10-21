@@ -1,0 +1,15 @@
+[package]
+name = "wt-storage"
+description = "SQLite implementation of the WFH Tracker repositories."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+jiff.workspace = true
+rusqlite.workspace = true
+rusqlite_migration.workspace = true
+wt-core.workspace = true
+
+[lints]
+workspace = true

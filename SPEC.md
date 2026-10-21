@@ -67,7 +67,7 @@ Overtime — none
 | Clipboard | `arboard` | 3.7 |
 | Errors / logging | `thiserror` / `tracing` | 2.0 / 0.1 |
 | Autostart at login | `auto-launch` (per-user `HKCU\...\Run` key, no admin rights) | 0.6 |
-| Data dir | `directories` (`%APPDATA%\wfh-tracker`, `~/Library/Application Support/...`) | 6.0 |
+| Data dir | `directories` (`%APPDATA%\wfh-tracker\data`, `~/Library/Application Support/wfh-tracker`) | 6.0 |
 
 Versions are re-checked when each crate is first added. Adding any dependency not in this table is an **Ask first** item.
 

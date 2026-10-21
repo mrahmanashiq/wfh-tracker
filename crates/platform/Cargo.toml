@@ -1,0 +1,17 @@
+[package]
+name = "wt-platform"
+description = "OS adapters for WFH Tracker: clock, data dir, autostart, tray."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+auto-launch.workspace = true
+directories.workspace = true
+jiff.workspace = true
+thiserror.workspace = true
+tray-icon.workspace = true
+wt-core.workspace = true
+
+[lints]
+workspace = true

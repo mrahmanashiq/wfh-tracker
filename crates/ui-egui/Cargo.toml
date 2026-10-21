@@ -1,0 +1,18 @@
+[package]
+name = "wt-ui-egui"
+description = "egui front end for WFH Tracker. Talks only to wt-core."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+eframe.workspace = true
+egui.workspace = true
+jiff.workspace = true
+wt-core.workspace = true
+
+[dev-dependencies]
+egui_kittest.workspace = true
+
+[lints]
+workspace = true

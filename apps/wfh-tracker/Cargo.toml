@@ -1,0 +1,16 @@
+[package]
+name = "wfh-tracker"
+description = "WFH Tracker desktop app."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+eframe.workspace = true
+wt-core.workspace = true
+wt-platform.workspace = true
+wt-storage.workspace = true
+wt-ui-egui.workspace = true
+
+[lints]
+workspace = true
