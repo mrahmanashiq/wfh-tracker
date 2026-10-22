@@ -2,6 +2,7 @@
 //! so it is kept thin and checked by hand; the rules it serves live in `wt-core`.
 
 mod autostart;
+mod clipboard;
 mod hotkey;
 mod icon_art;
 mod notify;
@@ -14,6 +15,7 @@ use jiff::Timestamp;
 use wt_core::Clock;
 
 pub use autostart::LoginAutostart;
+pub use clipboard::SystemClipboard;
 pub use hotkey::MeetingHotkey;
 pub use icon_art::app_icon_rgba;
 pub use notify::{APP_ID, DesktopNotifier, register_notifications};

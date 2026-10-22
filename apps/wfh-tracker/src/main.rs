@@ -10,8 +10,8 @@ use std::sync::Arc;
 use eframe::egui::{self, IconData, ViewportBuilder};
 use wt_core::{Autostart, CategoryRepo, SettingsRepo};
 use wt_platform::{
-    DesktopNotifier, LoginAutostart, MINIMIZED_FLAG, MeetingHotkey, ReleaseUpdater, SystemClock,
-    Tray, TrayAction, app_icon_rgba,
+    DesktopNotifier, LoginAutostart, MINIMIZED_FLAG, MeetingHotkey, ReleaseUpdater,
+    SystemClipboard, SystemClock, Tray, TrayAction, app_icon_rgba,
 };
 use wt_storage::SqliteStore;
 use wt_ui_egui::{Services, UiFonts, WfhApp};
@@ -69,6 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 notifier: Box::new(DesktopNotifier),
                 fonts: segoe_ui(),
                 updater: release_updater(),
+                clipboard: Box::new(SystemClipboard),
             };
             let (app, shell) = WfhApp::new(&cc.egui_ctx, store, services, start_hidden);
             // Tray and hotkey are created here, on the event-loop thread, as
@@ -111,6 +112,7 @@ fn segoe_ui() -> Option<UiFonts> {
     Some(UiFonts {
         regular: wt_platform::system_font("segoeui.ttf")?,
         semibold: wt_platform::system_font("seguisb.ttf")?,
+        emoji: wt_platform::system_font("seguiemj.ttf"),
     })
 }
 

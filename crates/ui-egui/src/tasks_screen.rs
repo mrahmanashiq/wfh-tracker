@@ -8,7 +8,7 @@ use jiff::SignedDuration;
 use wt_core::repo::RepoResult;
 use wt_core::{
     Category, CategoryRepo, Clock, Id, Placement, SessionRepo, Settings, Task, TaskRepo,
-    TimerTarget, today_view, tracked_time,
+    TimerTarget, duration_text, today_view, tracked_time,
 };
 
 use crate::theme::palette;
@@ -258,7 +258,11 @@ impl TasksScreen {
                         *action = Some(Action::Start(id));
                     }
                     if row.time.is_positive() {
-                        ui.label(RichText::new(compact(row.time)).small().color(p.secondary));
+                        ui.label(
+                            RichText::new(duration_text(row.time))
+                                .small()
+                                .color(p.secondary),
+                        );
                     }
                 });
             },
@@ -282,9 +286,8 @@ impl TasksScreen {
         }
     }
 
-    /// The "⋯" menu: rename, add a sub-task, delete.
     /// The row's icons, shown on hover: delete, edit, add a sub-task.
-    fn row_icons(&mut self, ui: &mut Ui, task: &Task, action: &mut Option<Action>) {
+    fn row_icons(&self, ui: &mut Ui, task: &Task, action: &mut Option<Action>) {
         let p = palette(ui);
         let id = task.meta.id;
         let top_level = task.parent_id.is_none();
@@ -428,15 +431,6 @@ fn edit_fields(ui: &mut Ui, draft: &mut EditDraft, cats: &[Category], action: &m
     }
     if ui.add(Button::new("Cancel").frame(false)).clicked() {
         *action = Some(Action::Close);
-    }
-}
-
-/// `25m`, or `1h 05m` from an hour on.
-fn compact(d: SignedDuration) -> String {
-    let m = d.as_mins().max(0);
-    match m / 60 {
-        0 => format!("{m}m"),
-        h => format!("{h}h {:02}m", m % 60),
     }
 }
 

@@ -14,6 +14,8 @@ use egui::{
 pub struct UiFonts {
     pub regular: Vec<u8>,
     pub semibold: Vec<u8>,
+    /// Fallback for symbols such as ✅ ⏳ (e.g. Segoe UI Emoji).
+    pub emoji: Option<Vec<u8>>,
 }
 
 /// Named colours for one theme.
@@ -113,6 +115,16 @@ fn font_definitions(fonts: Option<UiFonts>) -> FontDefinitions {
             proportional.insert(0, "ui".into());
         }
         semibold_chain.insert(0, "ui-semibold".into());
+        if let Some(emoji) = fonts.emoji {
+            defs.font_data
+                .insert("ui-emoji".into(), Arc::new(FontData::from_owned(emoji)));
+            for family in [FontFamily::Proportional, FontFamily::Monospace] {
+                if let Some(chain) = defs.families.get_mut(&family) {
+                    chain.push("ui-emoji".into());
+                }
+            }
+            semibold_chain.push("ui-emoji".into());
+        }
     }
     defs.families.insert(semibold(), semibold_chain);
     defs

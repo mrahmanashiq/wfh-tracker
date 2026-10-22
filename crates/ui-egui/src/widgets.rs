@@ -92,6 +92,9 @@ pub enum Icon {
     Pencil,
     Trash,
     Plus,
+    Doc,
+    Back,
+    Forward,
 }
 
 impl Icon {
@@ -148,6 +151,24 @@ impl Icon {
                 ];
                 painter.add(Shape::line(body.to_vec(), s));
                 painter.line_segment([c + vec2(0.0, -1.5), c + vec2(0.0, 3.0)], s);
+            }
+            Icon::Doc => {
+                let s = Stroke::new(1.5, color);
+                let page = Rect::from_center_size(c, vec2(10.0, 13.0));
+                painter.rect_stroke(page, CornerRadius::same(2), s, egui::StrokeKind::Middle);
+                for dy in [-2.5, 0.5, 3.5] {
+                    painter.line_segment([c + vec2(-2.5, dy), c + vec2(2.5, dy)], s);
+                }
+            }
+            Icon::Back | Icon::Forward => {
+                let dir = if matches!(self, Icon::Back) {
+                    -1.0
+                } else {
+                    1.0
+                };
+                let s = Stroke::new(1.8, color);
+                painter.line_segment([c + vec2(2.0 * dir, -5.0), c + vec2(-3.0 * dir, 0.0)], s);
+                painter.line_segment([c + vec2(-3.0 * dir, 0.0), c + vec2(2.0 * dir, 5.0)], s);
             }
             Icon::Plus => {
                 let s = Stroke::new(1.8, color);

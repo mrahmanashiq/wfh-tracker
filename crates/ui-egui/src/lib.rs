@@ -2,6 +2,7 @@
 //! through the traits in `wt-core`, so the UI can be replaced on its own.
 
 mod categories_screen;
+mod reports_screen;
 mod settings_screen;
 mod status_bar;
 mod tasks_screen;
@@ -20,6 +21,7 @@ use wt_core::{Autostart, Clock, Notifier, SessionRepo, SettingsRepo};
 use crate::widgets::Icon;
 
 pub use categories_screen::CategoriesScreen;
+pub use reports_screen::ReportsScreen;
 pub use settings_screen::SettingsScreen;
 pub use status_bar::StatusBar;
 pub use tasks_screen::TasksScreen;
@@ -81,6 +83,8 @@ pub struct WfhApp<S> {
     status: StatusBar,
     tasks: TasksScreen,
     categories: CategoriesScreen,
+    reports: ReportsScreen,
+    clipboard: Box<dyn wt_core::Clipboard>,
     settings: SettingsScreen,
     updates: UpdateController,
     quitting: Arc<AtomicBool>,
@@ -90,6 +94,7 @@ pub struct WfhApp<S> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Screen {
     Tasks,
+    Reports,
     Categories,
     Settings,
 }
@@ -112,6 +117,7 @@ pub struct Services {
     pub fonts: Option<UiFonts>,
     /// `None` in development builds.
     pub updater: Option<Arc<dyn wt_core::Updater>>,
+    pub clipboard: Box<dyn wt_core::Clipboard>,
 }
 
 impl<S: Store> WfhApp<S> {
@@ -141,6 +147,8 @@ impl<S: Store> WfhApp<S> {
             status: StatusBar::default(),
             tasks: TasksScreen::default(),
             categories: CategoriesScreen::default(),
+            reports: ReportsScreen::default(),
+            clipboard: services.clipboard,
             settings,
             updates: UpdateController::new(services.updater),
             quitting,
@@ -226,6 +234,13 @@ impl<S: Store> eframe::App for WfhApp<S> {
             )
             .show(ui, |ui| match self.screen {
                 Screen::Tasks => self.tasks.ui(ui, &self.store, self.clock.as_ref()),
+                Screen::Reports => self.reports.ui(
+                    ui,
+                    &self.store,
+                    &settings,
+                    self.clock.as_ref(),
+                    self.clipboard.as_ref(),
+                ),
                 Screen::Categories => self.categories.ui(ui, &self.store),
                 Screen::Settings => {
                     self.settings.ui(ui, &self.store, self.autostart.as_ref());
@@ -252,6 +267,7 @@ impl<S: Store> WfhApp<S> {
             .unwrap_or(0);
         let items = [
             (Screen::Tasks, Icon::Star, p.star, "Today", Some(open)),
+            (Screen::Reports, Icon::Doc, p.accent, "Reports", None),
             (Screen::Categories, Icon::Tag, p.accent, "Categories", None),
             (Screen::Settings, Icon::Gear, p.secondary, "Settings", None),
         ];
