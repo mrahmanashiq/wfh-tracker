@@ -3,7 +3,8 @@ use wt_core::repo::RepoResult;
 use wt_core::{CategoryKind, CategoryRepo, Id, NewCategory, Rgb};
 
 use crate::widgets::{
-    DeleteClick, Icon, color_dot, delete_buttons, message, pill, screen_title, text_button,
+    DeleteClick, Icon, color_dot, delete_buttons, icon_button, message, pill, screen_title,
+    text_button,
 };
 
 /// Add, edit and delete categories. Deleting one still used by tasks is refused.
@@ -100,7 +101,7 @@ impl CategoriesScreen {
                         Some(DeleteClick::Cancel) => action = Some(Action::ArmDelete(None)),
                         None => {}
                     }
-                    if text_button(ui, "Edit", false).clicked() {
+                    if icon_button(ui, Icon::Pencil, "Edit", p.secondary).clicked() {
                         let Rgb(r, g, b) = cat.color;
                         action = Some(Action::OpenEdit(id, cat.name.clone(), [r, g, b]));
                     }

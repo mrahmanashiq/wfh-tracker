@@ -86,10 +86,12 @@ pub fn progress_pie(ui: &mut Ui, done: usize, total: usize) -> Response {
 pub enum Icon {
     Play,
     Stop,
-    More,
     Star,
     Tag,
     Gear,
+    Pencil,
+    Trash,
+    Plus,
 }
 
 impl Icon {
@@ -108,10 +110,6 @@ impl Icon {
                 let r = Rect::from_center_size(c, vec2(9.0, 9.0));
                 painter.rect_filled(r, CornerRadius::same(2), color);
             }
-            Icon::More => {
-                for dx in [-5.0, 0.0, 5.0] {
-                    painter.circle_filled(c + vec2(dx, 0.0), 1.6, color);
-                }
             }
             Icon::Star => star(painter, c, 7.5, color),
             Icon::Tag => {
@@ -127,6 +125,35 @@ impl Icon {
             Icon::Gear => {
                 painter.circle_stroke(c, 5.0, Stroke::new(2.0, color));
                 painter.circle_filled(c, 1.8, color);
+            }
+            Icon::Pencil => {
+                // A diagonal shaft with a short tip and an eraser band.
+                painter.line_segment(
+                    [c + vec2(-3.5, 3.5), c + vec2(4.0, -4.0)],
+                    Stroke::new(2.6, color),
+                );
+                painter.line_segment(
+                    [c + vec2(-5.0, 5.0), c + vec2(-3.8, 3.8)],
+                    Stroke::new(1.4, color),
+                );
+            }
+            Icon::Trash => {
+                let s = Stroke::new(1.5, color);
+                painter.line_segment([c + vec2(-5.5, -3.5), c + vec2(5.5, -3.5)], s);
+                painter.line_segment([c + vec2(-1.8, -5.2), c + vec2(1.8, -5.2)], s);
+                let body = [
+                    c + vec2(-4.0, -3.5),
+                    c + vec2(-3.2, 5.0),
+                    c + vec2(3.2, 5.0),
+                    c + vec2(4.0, -3.5),
+                ];
+                painter.add(Shape::line(body.to_vec(), s));
+                painter.line_segment([c + vec2(0.0, -1.5), c + vec2(0.0, 3.0)], s);
+            }
+            Icon::Plus => {
+                let s = Stroke::new(1.8, color);
+                painter.line_segment([c + vec2(-5.0, 0.0), c + vec2(5.0, 0.0)], s);
+                painter.line_segment([c + vec2(0.0, -5.0), c + vec2(0.0, 5.0)], s);
             }
         }
     }
@@ -252,8 +279,7 @@ pub enum DeleteClick {
 pub fn delete_buttons(ui: &mut Ui, armed: bool) -> Option<DeleteClick> {
     let p = palette(ui);
     if !armed {
-        return ui
-            .add(Button::new(RichText::new("Delete").color(p.danger)).frame(false))
+        return icon_button(ui, Icon::Trash, "Delete", p.secondary)
             .clicked()
             .then_some(DeleteClick::Arm);
     }

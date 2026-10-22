@@ -45,18 +45,16 @@ fn hover_row(h: &mut Harness<'_, State>, title: &str) {
     h.run();
 }
 
-/// Opens the "More" menu of the row named `row` and picks `item`.
-fn row_menu(h: &mut Harness<'_, State>, row: &str, item: &str) {
+/// Hovers the row named `row` and clicks its `icon` (e.g. "Edit", "Delete").
+fn row_icon(h: &mut Harness<'_, State>, row: &str, icon: &str) {
     hover_row(h, row);
-    h.get_by_label("More").click();
-    h.run();
-    h.get_by_label(item).click();
+    h.get_by_label(icon).click();
     h.run();
 }
 
 /// Adds a sub-task under the top-level task named `parent`.
 fn add_subtask(h: &mut Harness<'_, State>, parent: &str, title: &str) {
-    row_menu(h, parent, "Add sub-task");
+    row_icon(h, parent, "Add sub-task");
     h.get_by_label("Sub-task title")
         .set_text_value_accesskit(title);
     h.run();
@@ -104,7 +102,7 @@ fn deleting_a_task_removes_it_and_its_subtasks() {
     let mut h = checkout_with_two_subtasks();
     add_task(&mut h, "Other");
 
-    row_menu(&mut h, "Checkout", "Delete");
+    row_icon(&mut h, "Checkout", "Delete");
     h.get_by_label("Confirm delete").click();
     h.run();
 

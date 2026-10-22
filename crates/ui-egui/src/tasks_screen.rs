@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use egui::{
-    Align, Button, ComboBox, CornerRadius, DragValue, FontId, Layout, Popup, RichText, Sense,
-    Shape, Stroke, TextEdit, Ui, vec2,
+    Align, Button, ComboBox, CornerRadius, DragValue, FontId, Layout, RichText, Sense, Shape,
+    Stroke, TextEdit, Ui, vec2,
 };
 use jiff::SignedDuration;
 use wt_core::repo::RepoResult;
@@ -30,9 +30,6 @@ pub struct TasksScreen {
     running: Option<Id>,
     /// The row under the pointer last frame; only it shows its actions.
     hovered: Option<Id>,
-    /// The row whose "More" menu is open; it keeps its actions while the
-    /// pointer is over the menu, outside the row.
-    menu_open: Option<Id>,
 }
 
 /// A task being edited. Category and break interval apply to top-level tasks only.
@@ -214,7 +211,7 @@ impl TasksScreen {
         let p = palette(ui);
         let id = row.task.meta.id;
         let running = self.running == Some(id);
-        let show_actions = running || self.hovered == Some(id) || self.menu_open == Some(id);
+        let show_actions = running || self.hovered == Some(id);
 
         let background = ui.painter().add(Shape::Noop);
         let inner = ui.allocate_ui_with_layout(
@@ -248,7 +245,7 @@ impl TasksScreen {
                         return;
                     }
                     if show_actions {
-                        self.more_menu(ui, row.task, action);
+                        self.row_icons(ui, row.task, action);
                     }
                     if running {
                         if icon_button(ui, Icon::Stop, "Stop", p.accent).clicked() {
@@ -286,37 +283,25 @@ impl TasksScreen {
     }
 
     /// The "⋯" menu: rename, add a sub-task, delete.
-    fn more_menu(&mut self, ui: &mut Ui, task: &Task, action: &mut Option<Action>) {
+    /// The row's icons, shown on hover: delete, edit, add a sub-task.
+    fn row_icons(&mut self, ui: &mut Ui, task: &Task, action: &mut Option<Action>) {
         let p = palette(ui);
         let id = task.meta.id;
         let top_level = task.parent_id.is_none();
-        let button = icon_button(ui, Icon::More, "More", p.secondary);
-        let popup_id = Popup::default_response_id(&button);
-        Popup::menu(&button).show(|ui| {
-            ui.set_min_width(150.0);
-            if ui.button("Rename").clicked() {
-                *action = Some(Action::OpenRename(EditDraft {
-                    id,
-                    title: task.title.clone(),
-                    category: top_level.then_some(task.category_id),
-                    break_interval: task.break_interval_min,
-                    top_level,
-                }));
-                ui.close();
-            }
-            if top_level && ui.button("Add sub-task").clicked() {
-                *action = Some(Action::OpenSubtask(id));
-                ui.close();
-            }
-            if ui.button(RichText::new("Delete").color(p.danger)).clicked() {
-                *action = Some(Action::ArmDelete(Some(id)));
-                ui.close();
-            }
-        });
-        if Popup::is_id_open(ui.ctx(), popup_id) {
-            self.menu_open = Some(id);
-        } else if self.menu_open == Some(id) {
-            self.menu_open = None;
+        if let Some(DeleteClick::Arm) = delete_buttons(ui, false) {
+            *action = Some(Action::ArmDelete(Some(id)));
+        }
+        if icon_button(ui, Icon::Pencil, "Edit", p.secondary).clicked() {
+            *action = Some(Action::OpenRename(EditDraft {
+                id,
+                title: task.title.clone(),
+                category: top_level.then_some(task.category_id),
+                break_interval: task.break_interval_min,
+                top_level,
+            }));
+        }
+        if top_level && icon_button(ui, Icon::Plus, "Add sub-task", p.secondary).clicked() {
+            *action = Some(Action::OpenSubtask(id));
         }
     }
 
