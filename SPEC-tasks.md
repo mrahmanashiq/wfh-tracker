@@ -12,19 +12,19 @@ Give the user one list of the work they intend to do — office features with su
 2. I add **sub-tasks** under a task (e.g. "Payment form validation"). A sub-task always has its parent's category.
 3. I tick a task or sub-task **done**, and can untick it (**undone**) if I was wrong.
 4. **Carry-over:** the Tasks screen shows every open task, plus tasks I finished *today*. Tasks finished on earlier days drop off the list. Nothing is copied: an open task is simply still open tomorrow.
-5. I can **rename** a task and **delete** it. Deleting a task deletes its sub-tasks.
+5. I can **rename** a task and **delete** it. Deleting a task deletes every task below it.
 6. I manage **categories**: add (name, kind, colour), rename/recolour, and delete. A category still used by an open or done task can't be deleted. The app says which tasks use it.
 
 ## Domain rules
 
 | Rule | Value |
 |---|---|
-| Nesting depth | Two levels: task → sub-task. A sub-task can't have sub-tasks. |
-| Sub-task category | Always the parent's. Changing the parent's category changes the sub-tasks too. |
+| Nesting depth | **Three levels** (changed 2026-10-22 at the user's request): task → sub-task → sub-sub-task. A third-level task can't have sub-tasks. |
+| Sub-task category | Always the top-level task's. Changing the top-level task's category changes every task below it. |
 | Done timestamp | `done_at` is set when ticked and cleared when unticked. |
 | "Today" | The local calendar day from the `Clock`'s time zone. |
-| Visible on Tasks screen | A task is visible if it's open or was done today (local). A parent is shown if it or any of its sub-tasks is visible. |
-| Parent auto-done | When every sub-task is done, the parent is marked done. When a sub-task is unticked, or a new one is added, the parent reopens. Ticking or unticking a parent by hand doesn't change its sub-tasks. The parent shows progress, e.g. `2/5`. |
+| Visible on Tasks screen | A task is visible if it's open or was done today (local). A parent is shown if it or any task below it is visible. |
+| Parent auto-done | When every sub-task is done, the parent is marked done, and this continues up the levels. When a sub-task is unticked, or a new one is added, its parent and every done task above it reopen. Ticking or unticking a parent by hand doesn't change its sub-tasks. Each parent shows progress over its direct sub-tasks, e.g. `2/5`. |
 | Order | Creation order (UUID v7 id). No manual reordering in this module. |
 | Title | Trimmed, 1–200 characters |
 | Category delete | Refused while any live task references it |
