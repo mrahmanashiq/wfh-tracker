@@ -49,8 +49,19 @@ impl Clock for SystemClock {
     }
 }
 
+/// Reads a font file from the OS font folder (Windows only for now), e.g.
+/// `segoeui.ttf`. `None` when it isn't there, so the caller can fall back.
+pub fn system_font(file: &str) -> Option<Vec<u8>> {
+    let windir = std::env::var_os("WINDIR")?;
+    std::fs::read(std::path::Path::new(&windir).join("Fonts").join(file)).ok()
+}
+
 /// Per-user data folder, e.g. `%APPDATA%\wfh-tracker\data` on Windows.
+/// `WFH_TRACKER_DATA_DIR` overrides it (for trying things on a throwaway copy).
 pub fn data_dir() -> Result<PathBuf, PlatformError> {
+    if let Some(dir) = std::env::var_os("WFH_TRACKER_DATA_DIR") {
+        return Ok(PathBuf::from(dir));
+    }
     directories::ProjectDirs::from("", "", "wfh-tracker")
         .map(|dirs| dirs.data_dir().to_path_buf())
         .ok_or(PlatformError::NoHomeDir)

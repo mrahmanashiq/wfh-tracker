@@ -33,8 +33,8 @@ impl SettingsScreen {
     }
 
     pub fn ui(&mut self, ui: &mut Ui, repo: &dyn SettingsRepo, autostart: &dyn Autostart) {
-        ui.heading("Settings");
-        ui.add_space(8.0);
+        let p = crate::theme::palette(ui);
+        crate::widgets::screen_title(ui, crate::widgets::Icon::Gear, p.secondary, "Settings");
 
         let d = &mut self.draft;
         Grid::new("settings")
@@ -107,7 +107,7 @@ impl SettingsScreen {
             });
 
         ui.add_space(12.0);
-        if ui.button("Save").clicked() {
+        if crate::widgets::pill(ui, "Save", p.accent, egui::Color32::WHITE).clicked() {
             self.status = Some(self.save(repo, autostart));
         }
         match &self.status {

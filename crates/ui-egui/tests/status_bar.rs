@@ -50,6 +50,7 @@ fn harness() -> Harness<'static, State> {
         |ui, s: &mut State| {
             s.bar
                 .ui(ui, &s.store, &Settings::default(), s.clock.as_ref());
+            s.bar.quick_start(ui, &s.store);
         },
         State {
             store,

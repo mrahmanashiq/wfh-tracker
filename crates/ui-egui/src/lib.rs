@@ -5,6 +5,7 @@ mod categories_screen;
 mod settings_screen;
 mod status_bar;
 mod tasks_screen;
+mod theme;
 mod widgets;
 
 use std::sync::Arc;
@@ -15,10 +16,13 @@ use std::time::{Duration, Instant};
 use egui::{Context, ViewportCommand};
 use wt_core::{Autostart, Clock, Notifier, SessionRepo, SettingsRepo};
 
+use crate::widgets::Icon;
+
 pub use categories_screen::CategoriesScreen;
 pub use settings_screen::SettingsScreen;
 pub use status_bar::StatusBar;
 pub use tasks_screen::TasksScreen;
+pub use theme::UiFonts;
 
 /// How often reminders and the heartbeat are checked, shown or hidden.
 const TICK_EVERY: Duration = Duration::from_secs(15);
@@ -101,6 +105,8 @@ pub struct Services {
     pub clock: Arc<dyn Clock>,
     pub autostart: Box<dyn Autostart>,
     pub notifier: Box<dyn Notifier>,
+    /// Fonts to use instead of egui's built-in one, e.g. Segoe UI.
+    pub fonts: Option<UiFonts>,
 }
 
 impl<S: Store> WfhApp<S> {
@@ -110,6 +116,7 @@ impl<S: Store> WfhApp<S> {
         services: Services,
         start_hidden: bool,
     ) -> (Self, ShellHandle) {
+        theme::install(ctx, services.fonts);
         let quitting = Arc::new(AtomicBool::new(false));
         let (sender, commands) = channel();
         let handle = ShellHandle {
@@ -181,29 +188,75 @@ impl<S: Store> eframe::App for WfhApp<S> {
         ui.ctx().request_repaint_after(Duration::from_secs(1));
 
         let settings = self.store.load().unwrap_or_default();
-        egui::Panel::top("status").show(ui, |ui| {
-            ui.add_space(4.0);
-            self.status
-                .ui(ui, &self.store, &settings, self.clock.as_ref());
-            ui.add_space(4.0);
-        });
+        let p = theme::palette(ui);
         egui::Panel::left("nav")
             .resizable(false)
-            .default_size(140.0)
+            .exact_size(210.0)
+            .show_separator_line(false)
+            .frame(
+                egui::Frame::new()
+                    .fill(p.sidebar)
+                    .inner_margin(egui::Margin::symmetric(10, 16)),
+            )
+            .show(ui, |ui| self.sidebar(ui));
+        egui::Panel::top("status")
+            .show_separator_line(true)
+            .frame(
+                egui::Frame::new()
+                    .fill(p.canvas)
+                    .inner_margin(egui::Margin::symmetric(24, 10)),
+            )
             .show(ui, |ui| {
-                ui.add_space(8.0);
-                for (screen, name) in [
-                    (Screen::Tasks, "Tasks"),
-                    (Screen::Categories, "Categories"),
-                    (Screen::Settings, "Settings"),
-                ] {
-                    ui.selectable_value(&mut self.screen, screen, name);
-                }
+                self.status
+                    .ui(ui, &self.store, &settings, self.clock.as_ref());
             });
-        egui::CentralPanel::default().show(ui, |ui| match self.screen {
-            Screen::Tasks => self.tasks.ui(ui, &self.store, self.clock.as_ref()),
-            Screen::Categories => self.categories.ui(ui, &self.store),
-            Screen::Settings => self.settings.ui(ui, &self.store, self.autostart.as_ref()),
-        });
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(p.canvas)
+                    .inner_margin(egui::Margin::symmetric(32, 20)),
+            )
+            .show(ui, |ui| match self.screen {
+                Screen::Tasks => self.tasks.ui(ui, &self.store, self.clock.as_ref()),
+                Screen::Categories => self.categories.ui(ui, &self.store),
+                Screen::Settings => self.settings.ui(ui, &self.store, self.autostart.as_ref()),
+            });
+    }
+}
+
+impl<S: Store> WfhApp<S> {
+    /// Things-style navigation: Today with its open count, Categories,
+    /// Settings, then the quick-start list.
+    fn sidebar(&mut self, ui: &mut egui::Ui) {
+        let p = theme::palette(ui);
+        let open = self
+            .store
+            .list_live()
+            .map(|tasks| {
+                tasks
+                    .iter()
+                    .filter(|t| t.parent_id.is_none() && !t.is_done())
+                    .count()
+            })
+            .unwrap_or(0);
+        let items = [
+            (Screen::Tasks, Icon::Star, p.star, "Today", Some(open)),
+            (Screen::Categories, Icon::Tag, p.accent, "Categories", None),
+            (Screen::Settings, Icon::Gear, p.secondary, "Settings", None),
+        ];
+        for (screen, icon, color, name, count) in items {
+            let row = widgets::sidebar_row(
+                ui,
+                self.screen == screen,
+                |painter, rect| icon.paint(painter, rect, color),
+                name,
+                count,
+                name,
+            );
+            if row.clicked() {
+                self.screen = screen;
+            }
+        }
+        self.status.quick_start(ui, &self.store);
     }
 }

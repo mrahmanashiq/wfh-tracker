@@ -39,10 +39,24 @@ fn add_task(h: &mut Harness<'_, State>, title: &str) {
     h.run();
 }
 
-/// Adds a sub-task under the `nth` top-level task on screen.
-fn add_subtask(h: &mut Harness<'_, State>, nth: usize, title: &str) {
-    h.get_all_by_label("Add sub-task").nth(nth).unwrap().click();
+/// Points at the row named `title`; only the hovered row shows its actions.
+fn hover_row(h: &mut Harness<'_, State>, title: &str) {
+    h.get_by_label(title).hover();
     h.run();
+}
+
+/// Opens the "More" menu of the row named `row` and picks `item`.
+fn row_menu(h: &mut Harness<'_, State>, row: &str, item: &str) {
+    hover_row(h, row);
+    h.get_by_label("More").click();
+    h.run();
+    h.get_by_label(item).click();
+    h.run();
+}
+
+/// Adds a sub-task under the top-level task named `parent`.
+fn add_subtask(h: &mut Harness<'_, State>, parent: &str, title: &str) {
+    row_menu(h, parent, "Add sub-task");
     h.get_by_label("Sub-task title")
         .set_text_value_accesskit(title);
     h.run();
@@ -53,8 +67,8 @@ fn add_subtask(h: &mut Harness<'_, State>, nth: usize, title: &str) {
 fn checkout_with_two_subtasks() -> Harness<'static, State> {
     let mut h = harness();
     add_task(&mut h, "Checkout");
-    add_subtask(&mut h, 0, "Validation");
-    add_subtask(&mut h, 0, "API");
+    add_subtask(&mut h, "Checkout", "Validation");
+    add_subtask(&mut h, "Checkout", "API");
     h
 }
 
@@ -90,8 +104,7 @@ fn deleting_a_task_removes_it_and_its_subtasks() {
     let mut h = checkout_with_two_subtasks();
     add_task(&mut h, "Other");
 
-    h.get_all_by_label("Delete").next().unwrap().click();
-    h.run();
+    row_menu(&mut h, "Checkout", "Delete");
     h.get_by_label("Confirm delete").click();
     h.run();
 
@@ -114,8 +127,8 @@ fn a_blank_title_is_refused_with_a_message() {
 fn start_and_stop_run_a_timer_on_a_task() {
     let mut h = checkout_with_two_subtasks();
 
-    // Rows in order: Checkout, Validation, API.
-    h.get_all_by_label("Start").nth(2).unwrap().click();
+    hover_row(&mut h, "API");
+    h.get_by_label("Start").click();
     h.run();
     let running = h.state().store.running().unwrap().unwrap();
     let api = h

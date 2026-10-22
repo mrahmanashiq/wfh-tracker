@@ -14,7 +14,7 @@ use wt_platform::{
     app_icon_rgba,
 };
 use wt_storage::SqliteStore;
-use wt_ui_egui::{Services, WfhApp};
+use wt_ui_egui::{Services, UiFonts, WfhApp};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start_hidden = std::env::args().any(|a| a == MINIMIZED_FLAG);
@@ -39,8 +39,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_title("WFH Tracker")
-            .with_inner_size([820.0, 600.0])
-            .with_min_inner_size([640.0, 440.0])
+            .with_inner_size([980.0, 660.0])
+            .with_min_inner_size([760.0, 480.0])
             .with_icon(IconData {
                 rgba,
                 width: size,
@@ -57,6 +57,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 clock,
                 autostart: Box::new(autostart),
                 notifier: Box::new(DesktopNotifier),
+                fonts: segoe_ui(),
             };
             let (app, shell) = WfhApp::new(&cc.egui_ctx, store, services, start_hidden);
             // Tray and hotkey are created here, on the event-loop thread, as
@@ -77,6 +78,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         }),
     )?;
     Ok(())
+}
+
+/// Windows' own UI font, for a native feel.
+fn segoe_ui() -> Option<UiFonts> {
+    Some(UiFonts {
+        regular: wt_platform::system_font("segoeui.ttf")?,
+        semibold: wt_platform::system_font("seguisb.ttf")?,
+    })
 }
 
 /// Keeps the tray icon and hotkey registered for as long as the app runs.

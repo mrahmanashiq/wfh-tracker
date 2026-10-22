@@ -1,4 +1,4 @@
-use egui::{RichText, Ui};
+use egui::{Color32, CornerRadius, RichText, Sense, Ui, vec2};
 use jiff::{SignedDuration, Timestamp};
 use wt_core::repo::RepoResult;
 use wt_core::{
@@ -6,13 +6,15 @@ use wt_core::{
     SessionRepo, Settings, Tick, TimerTarget, office_status, office_time,
 };
 
-use crate::widgets::message;
+use crate::theme::palette;
+use crate::widgets::{Icon, color32, icon_button, message, pill, section_label, sidebar_row};
 
 /// A timer left running is stopped once the app has been gone this long.
 const RECOVERY_GAP: SignedDuration = SignedDuration::from_mins(3);
 
-/// The always-visible strip: running timer, today's office time, Meeting,
-/// breaks, resume and quick start. Also turns reminder ticks into notifications.
+/// The header strip: running timer, today's office time, Meeting, breaks and
+/// resume; plus the sidebar's quick-start list. Also turns reminder ticks into
+/// notifications.
 #[derive(Default)]
 pub struct StatusBar {
     reminders: Reminders,
@@ -45,10 +47,9 @@ impl StatusBar {
             Ok((
                 store.running()?,
                 store.sessions_since(two_days_before(now))?,
-                store.list()?,
             ))
         })();
-        let (running, sessions, categories) = match loaded {
+        let (running, sessions) = match loaded {
             Ok(loaded) => loaded,
             Err(e) => {
                 message(ui, &Some(format!("Could not load timers: {e}")));
@@ -56,68 +57,132 @@ impl StatusBar {
             }
         };
 
+        let p = palette(ui);
         let mut action = None;
         ui.horizontal(|ui| {
+            ui.set_min_height(36.0);
             match &running {
                 Some(session) => {
-                    ui.label(RichText::new(session_label(store, session)).strong());
-                    ui.weak(clock_text(now.duration_since(session.started_at)));
-                    if ui.button("Stop").clicked() {
-                        action = Some(Action::Stop);
-                    }
+                    let color = timer_color(store, session, p.accent);
+                    egui::Frame::new()
+                        .fill(p.accent_soft)
+                        .corner_radius(CornerRadius::same(16))
+                        .inner_margin(egui::Margin::symmetric(12, 4))
+                        .show(ui, |ui| {
+                            let (dot, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
+                            ui.painter().circle_filled(dot.center(), 4.0, color);
+                            ui.label(
+                                RichText::new(session_label(store, session))
+                                    .color(p.text)
+                                    .strong(),
+                            );
+                            ui.label(
+                                RichText::new(clock_text(now.duration_since(session.started_at)))
+                                    .color(p.accent)
+                                    .monospace(),
+                            );
+                            if icon_button(ui, Icon::Stop, "Stop", p.accent).clicked() {
+                                action = Some(Action::Stop);
+                            }
+                        });
                 }
                 None => {
-                    ui.weak("No timer running");
+                    ui.label(RichText::new("No timer running").color(p.secondary));
                 }
             }
-            ui.separator();
 
+            ui.add_space(12.0);
             let today = clock.today();
             let office = office_time(&sessions, today, &clock.time_zone(), now);
-            ui.label(office_text(office, settings, today.weekday()));
-            ui.separator();
+            let status = office_status(office, settings, today.weekday());
+            // Fixed width, so the pills on the right never cover it.
+            ui.allocate_ui(vec2(200.0, 36.0), |ui| {
+                ui.add_space(2.0);
+                ui.label(
+                    RichText::new(office_text(office, settings, today.weekday()))
+                        .small()
+                        .color(p.secondary),
+                );
+                let over = matches!(status, OfficeStatus::Overtime { .. });
+                office_bar(
+                    ui,
+                    office,
+                    settings.office_target_min,
+                    if over { p.danger } else { p.accent },
+                );
+            });
 
-            let in_meeting = running.as_ref().is_some_and(Session::is_meeting);
-            let on_break = running.as_ref().is_some_and(Session::is_break);
-            let meeting_label = if in_meeting { "End meeting" } else { "Meeting" };
-            if ui.button(meeting_label).clicked() {
-                action = Some(Action::ToggleMeeting);
-            }
-            if running.is_some() && !on_break && !in_meeting && ui.button("Take break").clicked() {
-                action = Some(Action::TakeBreak);
-            }
-            if let Some((_, label)) = &self.resume
-                && (running.is_none() || on_break)
-                && ui.button(format!("Resume {label}")).clicked()
-            {
-                action = Some(Action::Resume);
-            }
-        });
-
-        ui.horizontal_wrapped(|ui| {
-            ui.weak("Quick start:");
-            for c in categories.iter().filter(|c| {
-                matches!(
-                    c.kind,
-                    CategoryKind::Personal | CategoryKind::Learning | CategoryKind::Custom
-                )
-            }) {
-                if ui.small_button(format!("Start {}", c.name)).clicked() {
-                    action = Some(Action::QuickStart(c.meta.id));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let in_meeting = running.as_ref().is_some_and(Session::is_meeting);
+                let on_break = running.as_ref().is_some_and(Session::is_break);
+                let (label, fill, color) = if in_meeting {
+                    ("End meeting", p.danger, Color32::WHITE)
+                } else {
+                    ("Meeting", p.hover, p.text)
+                };
+                if pill(ui, label, fill, color).clicked() {
+                    action = Some(Action::ToggleMeeting);
                 }
-            }
+                if running.is_some()
+                    && !on_break
+                    && !in_meeting
+                    && pill(ui, "Take break", p.hover, p.text).clicked()
+                {
+                    action = Some(Action::TakeBreak);
+                }
+                if let Some((_, label)) = &self.resume
+                    && (running.is_none() || on_break)
+                    && pill(ui, &format!("Resume {label}"), p.accent, Color32::WHITE).clicked()
+                {
+                    action = Some(Action::Resume);
+                }
+            });
         });
 
         if let Some(banner) = &self.banner {
             ui.horizontal(|ui| {
-                ui.label(banner);
-                if ui.small_button("Dismiss").clicked() {
+                ui.label(RichText::new(banner).color(p.secondary));
+                if ui.add(egui::Button::new("Dismiss").frame(false)).clicked() {
                     action = Some(Action::DismissBanner);
                 }
             });
         }
         message(ui, &self.message);
 
+        if let Some(action) = action {
+            self.apply(action, store);
+        }
+    }
+
+    /// The sidebar's "Track time" list: one row per personal, learning or
+    /// custom category; a click starts its timer.
+    pub fn quick_start(&mut self, ui: &mut Ui, store: &dyn SessionRepo) {
+        let Ok(categories) = store.list() else {
+            return;
+        };
+        section_label(ui, "Track time");
+        let mut action = None;
+        for c in categories.iter().filter(|c| {
+            matches!(
+                c.kind,
+                CategoryKind::Personal | CategoryKind::Learning | CategoryKind::Custom
+            )
+        }) {
+            let color = color32(c.color);
+            let row = sidebar_row(
+                ui,
+                false,
+                |painter, rect| {
+                    painter.circle_filled(rect.center(), 4.5, color);
+                },
+                &c.name,
+                None,
+                &format!("Start {}", c.name),
+            );
+            if row.clicked() {
+                action = Some(Action::QuickStart(c.meta.id));
+            }
+        }
         if let Some(action) = action {
             self.apply(action, store);
         }
@@ -307,4 +372,25 @@ fn notice_text(
         ),
         Notice::BreakOver => ("Break over", "Ready to get back to it?".to_owned()),
     }
+}
+
+/// A thin bar: office time against the daily target (full when reached).
+fn office_bar(ui: &mut Ui, office: SignedDuration, target_min: u32, color: Color32) {
+    let p = palette(ui);
+    let (rect, _) = ui.allocate_exact_size(vec2(150.0, 4.0), Sense::hover());
+    let rounding = CornerRadius::same(2);
+    ui.painter().rect_filled(rect, rounding, p.hover);
+    let share = (office.as_mins() as f32 / target_min.max(1) as f32).clamp(0.0, 1.0);
+    let mut done = rect;
+    done.set_width(rect.width() * share);
+    ui.painter().rect_filled(done, rounding, color);
+}
+
+/// The running session's category colour, falling back to `default`.
+fn timer_color(store: &dyn SessionRepo, session: &Session, default: Color32) -> Color32 {
+    store
+        .list()
+        .ok()
+        .and_then(|cats| cats.into_iter().find(|c| c.meta.id == session.category_id))
+        .map_or(default, |c| color32(c.color))
 }

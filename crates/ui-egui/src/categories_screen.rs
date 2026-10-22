@@ -2,7 +2,9 @@ use egui::{ComboBox, TextEdit, Ui};
 use wt_core::repo::RepoResult;
 use wt_core::{CategoryKind, CategoryRepo, Id, NewCategory, Rgb};
 
-use crate::widgets::{DeleteClick, color_dot, delete_buttons, message};
+use crate::widgets::{
+    DeleteClick, Icon, color_dot, delete_buttons, message, pill, screen_title, text_button,
+};
 
 /// Add, edit and delete categories. Deleting one still used by tasks is refused.
 pub struct CategoriesScreen {
@@ -39,8 +41,8 @@ enum Action {
 
 impl CategoriesScreen {
     pub fn ui(&mut self, ui: &mut Ui, categories: &dyn CategoryRepo) {
-        ui.heading("Categories");
-        ui.add_space(8.0);
+        let p = crate::theme::palette(ui);
+        screen_title(ui, Icon::Tag, p.accent, "Categories");
 
         let cats = match categories.list() {
             Ok(cats) => cats,
@@ -65,7 +67,7 @@ impl CategoriesScreen {
                 .accessible_name("Kind");
             ui.color_edit_button_srgb(&mut self.new_color)
                 .accessible_name("Colour");
-            if ui.button("Add category").clicked() {
+            if pill(ui, "Add category", p.accent, egui::Color32::WHITE).clicked() {
                 action = Some(Action::Add);
             }
         });
@@ -81,10 +83,10 @@ impl CategoriesScreen {
                         .accessible_name("Edit category name");
                     ui.color_edit_button_srgb(color)
                         .accessible_name("Edit colour");
-                    if ui.button("Save").clicked() {
+                    if text_button(ui, "Save", true).clicked() {
                         action = Some(Action::Save);
                     }
-                    if ui.button("Cancel").clicked() {
+                    if text_button(ui, "Cancel", false).clicked() {
                         action = Some(Action::Close);
                     }
                     return;
@@ -98,7 +100,7 @@ impl CategoriesScreen {
                         Some(DeleteClick::Cancel) => action = Some(Action::ArmDelete(None)),
                         None => {}
                     }
-                    if ui.button("Edit").clicked() {
+                    if text_button(ui, "Edit", false).clicked() {
                         let Rgb(r, g, b) = cat.color;
                         action = Some(Action::OpenEdit(id, cat.name.clone(), [r, g, b]));
                     }
