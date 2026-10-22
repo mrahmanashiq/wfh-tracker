@@ -49,8 +49,9 @@ pub struct Reminders {
     break_due: Option<(Timestamp, Timestamp)>,
     /// The break session `BreakOver` already fired for.
     break_over_for: Option<Id>,
-    /// Blocks already handled today (reminded, or skipped as already running).
-    blocks_handled: HashSet<(Id, Date)>,
+    /// Blocks already handled today (reminded, or skipped as already running),
+    /// keyed with their times so a block moved to later reminds again.
+    blocks_handled: HashSet<(Id, Date, u16, u16)>,
 }
 
 impl Reminders {
@@ -67,10 +68,12 @@ impl Reminders {
     fn check_blocks(&mut self, t: &Tick<'_>, notices: &mut Vec<Notice>) {
         let local = t.now.to_zoned(t.tz.clone());
         let today = local.date();
-        self.blocks_handled.retain(|(_, day)| *day == today);
+        self.blocks_handled.retain(|(_, day, _, _)| *day == today);
         let running = t.sessions.iter().find(|s| s.is_running());
         for block in t.blocks.iter().filter(|b| b.is_on(&local)) {
-            let first_time = self.blocks_handled.insert((block.meta.id, today));
+            let first_time =
+                self.blocks_handled
+                    .insert((block.meta.id, today, block.start_min, block.end_min));
             let already_running = running.is_some_and(|s| s.category_id == block.category_id);
             if first_time && !already_running {
                 notices.push(Notice::BlockStarted {

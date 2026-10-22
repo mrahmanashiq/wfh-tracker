@@ -5,7 +5,7 @@ use std::sync::Arc;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use jiff::Timestamp;
-use wt_core::{FixedClock, PlanRepo, Settings};
+use wt_core::{BlockRepo, FixedClock, Settings, TargetRepo};
 use wt_storage::SqliteStore;
 use wt_ui_egui::PlanningScreen;
 
@@ -23,13 +23,8 @@ fn harness() -> Harness<'static, State> {
     wt_core::CategoryRepo::seed_defaults(&store).unwrap();
     Harness::new_ui_state(
         |ui, s: &mut State| {
-            s.screen.ui(
-                ui,
-                &s.store,
-                &s.store,
-                &Settings::default(),
-                s.clock.as_ref(),
-            );
+            s.screen
+                .ui(ui, &s.store, &Settings::default(), s.clock.as_ref());
         },
         State {
             store,
@@ -87,4 +82,24 @@ fn targets_and_blocks_can_be_deleted() {
 
     assert!(h.state().store.targets().unwrap().is_empty());
     assert!(h.state().store.blocks().unwrap().is_empty());
+}
+
+#[test]
+fn editing_a_target_changes_it_instead_of_adding_another() {
+    let mut h = harness();
+    h.get_by_label("Target hours").set_value_accesskit(5.0);
+    h.run();
+    h.get_by_label("Add target").click();
+    h.run();
+
+    h.get_all_by_label("Edit").next().unwrap().click();
+    h.run();
+    h.get_by_label("Target hours").set_value_accesskit(7.0);
+    h.run();
+    h.get_by_label("Save target").click();
+    h.run();
+
+    let targets = h.state().store.targets().unwrap();
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].minutes, 7 * 60);
 }

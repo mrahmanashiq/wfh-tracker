@@ -34,8 +34,12 @@ pub use updates::UpdateController;
 const TICK_EVERY: Duration = Duration::from_secs(15);
 
 /// Anything that stores everything the UI needs.
-pub trait Store: SettingsRepo + SessionRepo + wt_core::PlanRepo {}
-impl<T: SettingsRepo + SessionRepo + wt_core::PlanRepo> Store for T {}
+pub trait Store: SettingsRepo + PlanStore {}
+impl<T: SettingsRepo + PlanStore> Store for T {}
+
+/// What the planning screen needs: sessions (for progress), targets, blocks.
+pub trait PlanStore: SessionRepo + wt_core::TargetRepo + wt_core::BlockRepo {}
+impl<T: SessionRepo + wt_core::TargetRepo + wt_core::BlockRepo> PlanStore for T {}
 
 /// Requests from outside the UI thread (tray, global hotkey).
 enum ShellCommand {
@@ -181,7 +185,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
         if self.last_tick.is_none_or(|t| t.elapsed() >= TICK_EVERY) {
             self.last_tick = Some(Instant::now());
             let settings = self.store.load().unwrap_or_default();
-            let blocks = self.store.blocks().unwrap_or_default();
+            let blocks = wt_core::BlockRepo::blocks(&self.store).unwrap_or_default();
             self.status.tick(
                 &self.store,
                 &settings,
@@ -210,7 +214,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
         ui.ctx().request_repaint_after(Duration::from_secs(1));
 
         let settings = self.store.load().unwrap_or_default();
-        let blocks = self.store.blocks().unwrap_or_default();
+        let blocks = wt_core::BlockRepo::blocks(&self.store).unwrap_or_default();
         let p = theme::palette(ui);
         egui::Panel::left("nav")
             .resizable(false)
@@ -244,7 +248,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
                 Screen::Tasks => self.tasks.ui(ui, &self.store, self.clock.as_ref()),
                 Screen::Planning => {
                     self.planning
-                        .ui(ui, &self.store, &self.store, &settings, self.clock.as_ref())
+                        .ui(ui, &self.store, &settings, self.clock.as_ref());
                 }
                 Screen::Reports => self.reports.ui(
                     ui,

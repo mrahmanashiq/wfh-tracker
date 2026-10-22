@@ -244,3 +244,23 @@ fn the_active_block_is_the_earliest_starting_one_that_is_on() {
     assert_eq!(at("2026-10-22T23:00:00Z"), None);
     assert_eq!(at("2026-10-23T21:45:00Z"), None); // Friday
 }
+
+#[test]
+fn moving_a_block_later_in_the_day_reminds_again_at_its_new_time() {
+    let learning = Id::new();
+    let mut blocks = [block(learning, &SUN_TO_THU, "21:00", "22:00")];
+    let id = blocks[0].meta.id;
+    let mut r = Reminders::default();
+    assert_eq!(
+        block_notices(&mut r, &[], &blocks, "2026-10-22T21:00:00Z"),
+        [Notice::BlockStarted { block: id }]
+    );
+
+    blocks[0].start_min = 22 * 60 + 30;
+    blocks[0].end_min = 23 * 60;
+
+    assert_eq!(
+        block_notices(&mut r, &[], &blocks, "2026-10-22T22:30:00Z"),
+        [Notice::BlockStarted { block: id }]
+    );
+}

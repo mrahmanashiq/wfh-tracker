@@ -2,10 +2,11 @@ use egui::{ComboBox, CornerRadius, DragValue, RichText, Sense, TextEdit, Ui, vec
 use jiff::civil::Weekday;
 use wt_core::repo::RepoResult;
 use wt_core::{
-    BlockDraft, Category, CategoryKind, Clock, Id, Period, PlanRepo, SessionRepo, Settings, Target,
-    Weekdays, clock_text, target_progress,
+    BlockDraft, Category, CategoryKind, Clock, Id, Period, Settings, Target, Weekdays, clock_text,
+    target_progress,
 };
 
+use crate::PlanStore;
 use crate::theme::palette;
 use crate::widgets::{
     DeleteClick, Icon, color_dot, color32, delete_buttons, icon_button, message, pill,
@@ -20,6 +21,8 @@ pub struct PlanningScreen {
     target_category: Option<Id>,
     target_period: Option<Period>,
     target_hours: u32,
+    /// The target being edited, if any.
+    editing_target: Option<Target>,
     /// The block form; `editing` is the block being changed, if any.
     block: Option<BlockDraft>,
     editing: Option<Id>,
@@ -41,15 +44,14 @@ impl PlanningScreen {
     pub fn ui(
         &mut self,
         ui: &mut Ui,
-        plans: &dyn PlanRepo,
-        store: &dyn SessionRepo,
+        store: &dyn PlanStore,
         settings: &Settings,
         clock: &dyn Clock,
     ) {
         let p = palette(ui);
         screen_title(ui, Icon::Target, p.accent, "Planning");
         let loaded =
-            (|| -> RepoResult<_> { Ok((store.list()?, plans.targets()?, plans.blocks()?)) })();
+            (|| -> RepoResult<_> { Ok((store.list()?, store.targets()?, store.blocks()?)) })();
         let (cats, targets, blocks) = match loaded {
             Ok(loaded) => loaded,
             Err(e) => {
@@ -148,7 +150,12 @@ impl PlanningScreen {
                     .suffix(" h"),
             )
             .accessible_name("Target hours");
-            if pill(ui, "Add target", p.accent, egui::Color32::WHITE).clicked() {
+            let label = if self.editing_target.is_some() {
+                "Save target"
+            } else {
+                "Add target"
+            };
+            if pill(ui, label, p.accent, egui::Color32::WHITE).clicked() {
                 action = Some(Action::SetTarget);
             }
         });
@@ -226,7 +233,7 @@ impl PlanningScreen {
         message(ui, &self.message);
 
         if let Some(action) = action {
-            self.apply(action, plans);
+            self.apply(action, store);
         }
     }
 
@@ -253,18 +260,17 @@ impl PlanningScreen {
         }
     }
 
-    fn apply(&mut self, action: Action, plans: &dyn PlanRepo) {
+    fn apply(&mut self, action: Action, plans: &dyn PlanStore) {
         let result: RepoResult<()> = match action {
             Action::SetTarget => match (self.target_category, self.target_period) {
-                (Some(category), Some(period)) => plans
-                    .set_target(category, period, self.target_hours)
-                    .map(|_| ()),
+                (Some(category), Some(period)) => self.save_target(plans, category, period),
                 _ => Ok(()),
             },
             Action::EditTarget(target) => {
                 self.target_category = Some(target.category_id);
                 self.target_period = Some(target.period);
                 self.target_hours = target.minutes / 60;
+                self.editing_target = Some(target);
                 Ok(())
             }
             Action::DeleteTarget(id) => {
@@ -293,6 +299,23 @@ impl PlanningScreen {
             }
         };
         self.message = result.err().map(|e| e.to_string());
+    }
+
+    /// Saves the target form. When editing moves a target to another category
+    /// or period, the old one is removed so no duplicate is left behind.
+    fn save_target(
+        &mut self,
+        plans: &dyn PlanStore,
+        category: Id,
+        period: Period,
+    ) -> RepoResult<()> {
+        plans.set_target(category, period, self.target_hours)?;
+        if let Some(old) = self.editing_target.take()
+            && (old.category_id, old.period) != (category, period)
+        {
+            plans.delete_target(old.meta.id)?;
+        }
+        Ok(())
     }
 
     fn reset_block(&mut self) {

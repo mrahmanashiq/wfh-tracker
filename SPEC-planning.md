@@ -49,9 +49,16 @@ Repositories: `TargetRepo` (list / set / delete) and `BlockRepo` (list / create 
 
 1. Literal tests: week ranges with a Sunday start (and a Monday start), month ranges, and target progress that excludes other categories and other periods and counts a running session.
 2. Block reminders: one per day at the start; none when the matching timer is running; none outside the block's weekdays; a block already in progress at app start reminds once.
-3. Repositories: validation (empty weekdays, end ≤ start, out-of-range hours, a duplicate target) and soft delete.
+3. Repositories: validation (empty weekdays, end ≤ start, out-of-range hours) and soft delete. Setting a target for a category and period that already has one replaces it, so duplicates can't exist. A category with targets or blocks can't be deleted.
 4. Planning screen (kittest): add a target and see `0h 00m / 5h`; add a block and see it listed; delete both.
 5. `cargo xtask ci` passes.
+
+## As built (2026-10-22)
+
+- `active_block(blocks, now, tz)` returns the one block to show (the earliest-starting block that is on).
+- Block labels are limited to 60 characters, and blocks end by midnight.
+- Editing a target replaces it. Moving it to another category or period removes the old one.
+- A block whose times change reminds again that day, at its new start.
 
 ## Decisions (2026-10-22)
 

@@ -287,17 +287,13 @@ fn first_of_kind(repo: &(impl CategoryRepo + ?Sized), kind: CategoryKind) -> Rep
         .ok_or(RepoError::Invalid(missing))
 }
 
-/// Targets and scheduled blocks. Backends implement the primitives; the
-/// provided methods validate.
-pub trait PlanRepo {
+/// Targets, one per category and period. Backends implement the primitives;
+/// the provided method validates.
+pub trait TargetRepo {
     fn targets(&self) -> RepoResult<Vec<Target>>;
     /// Creates or replaces the live target for this category and period.
     fn write_target(&self, category_id: Id, period: Period, minutes: u32) -> RepoResult<Target>;
     fn delete_target(&self, id: Id) -> RepoResult<()>;
-    fn blocks(&self) -> RepoResult<Vec<Block>>;
-    fn insert_block(&self, draft: &BlockDraft) -> RepoResult<Block>;
-    fn write_block(&self, id: Id, draft: &BlockDraft) -> RepoResult<Block>;
-    fn delete_block(&self, id: Id) -> RepoResult<()>;
 
     /// Sets a category's target for a period, in whole hours (1 to the
     /// period's maximum). Setting it again replaces it.
@@ -310,6 +306,15 @@ pub trait PlanRepo {
         }
         self.write_target(category_id, period, hours * 60)
     }
+}
+
+/// Scheduled blocks. Backends implement the primitives; the provided
+/// methods validate.
+pub trait BlockRepo {
+    fn blocks(&self) -> RepoResult<Vec<Block>>;
+    fn insert_block(&self, draft: &BlockDraft) -> RepoResult<Block>;
+    fn write_block(&self, id: Id, draft: &BlockDraft) -> RepoResult<Block>;
+    fn delete_block(&self, id: Id) -> RepoResult<()>;
 
     fn add_block(&self, draft: &BlockDraft) -> RepoResult<Block> {
         self.insert_block(&draft.validated()?)

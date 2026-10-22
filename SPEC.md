@@ -114,8 +114,8 @@ Every table has: `id TEXT PRIMARY KEY` (UUID v7), `created_at`, `updated_at` (UT
 | `category` | name, kind (`office` · `meeting` · `learning` · `personal` · `break` · `custom`), color |
 | `task` | parent_id (null = top-level), title, category_id, status (`open` · `done`), break_interval_min (nullable), sort_order |
 | `session` | task_id (nullable for meeting/break), category_id, kind, started_at, ended_at (null = running) |
-| `target` | category_id, period (`week` · `month`), minutes |
-| `block` | category_id, weekdays bitmask, start_local, end_local, label |
+| `target` | category_id, period (`week` · `month`), minutes (one live target per category and period) |
+| `block` | category_id, weekdays bitmask (Sun = bit 0), start_min, end_min (local minutes after midnight), label |
 | `distraction_rule` | pattern, match_on (`title` · `process`), enabled |
 | `distraction_event` | rule_id, context (`learning` · `office`), started_at, ended_at |
 | `setting` | key, value |

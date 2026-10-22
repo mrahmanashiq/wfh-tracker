@@ -4,7 +4,9 @@ use std::sync::Arc;
 
 use jiff::Timestamp;
 use jiff::civil::Weekday;
-use wt_core::{BlockDraft, CategoryRepo, FixedClock, Id, Period, PlanRepo, RepoError, Weekdays};
+use wt_core::{
+    BlockDraft, BlockRepo, CategoryRepo, FixedClock, Id, Period, RepoError, TargetRepo, Weekdays,
+};
 use wt_storage::SqliteStore;
 
 fn store() -> (SqliteStore, Id) {
@@ -131,4 +133,19 @@ fn a_block_can_be_changed_and_deleted() {
 
     store.delete_block(block.meta.id).unwrap();
     assert!(store.blocks().unwrap().is_empty());
+}
+
+#[test]
+fn a_category_with_a_target_or_block_cannot_be_deleted() {
+    let (store, learning) = store();
+    store.set_target(learning, Period::Week, 5).unwrap();
+    store.add_block(&evenings(learning)).unwrap();
+
+    let result = CategoryRepo::delete(&store, learning);
+
+    assert!(
+        matches!(&result, Err(RepoError::InUse { tasks })
+            if tasks == &["weekly target", "Rust study block"]),
+        "{result:?}"
+    );
 }
