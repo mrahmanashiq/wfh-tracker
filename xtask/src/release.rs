@@ -38,6 +38,12 @@ pub fn release(root: &Path, publish: bool) -> Result<(), String> {
         .arg(&out)
         .arg("-k")
         .arg(&key)
+        // Without a password variable the packager waits for one on stdin.
+        .env(
+            "CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD",
+            std::env::var("CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD").unwrap_or_default(),
+        )
+        .stdin(std::process::Stdio::null())
         .current_dir(root))?;
 
     let setup = find(&out, "-setup.exe")?;
