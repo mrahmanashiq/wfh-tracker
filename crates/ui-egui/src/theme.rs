@@ -14,6 +14,8 @@ use egui::{
 pub struct UiFonts {
     pub regular: Vec<u8>,
     pub semibold: Vec<u8>,
+    /// Fallback for symbols such as ✅ ⏳ (e.g. Segoe UI Emoji).
+    pub emoji: Option<Vec<u8>>,
 }
 
 /// Named colours for one theme.
@@ -34,6 +36,8 @@ pub struct Palette {
     /// Running-timer row and pill background.
     pub accent_soft: Color32,
     pub danger: Color32,
+    /// A met target.
+    pub success: Color32,
     pub star: Color32,
 }
 
@@ -47,6 +51,7 @@ const LIGHT: Palette = Palette {
     accent: Color32::from_rgb(0x1a, 0x73, 0xe8),
     accent_soft: Color32::from_rgb(0xe8, 0xf0, 0xfd),
     danger: Color32::from_rgb(0xe5, 0x48, 0x4d),
+    success: Color32::from_rgb(0x1f, 0x9d, 0x55),
     star: Color32::from_rgb(0xf5, 0xb7, 0x00),
 };
 
@@ -60,6 +65,7 @@ const DARK: Palette = Palette {
     accent: Color32::from_rgb(0x4c, 0x9a, 0xff),
     accent_soft: Color32::from_rgb(0x1f, 0x33, 0x52),
     danger: Color32::from_rgb(0xff, 0x6b, 0x6b),
+    success: Color32::from_rgb(0x4c, 0xd9, 0x7b),
     star: Color32::from_rgb(0xff, 0xc8, 0x2e),
 };
 
@@ -113,6 +119,16 @@ fn font_definitions(fonts: Option<UiFonts>) -> FontDefinitions {
             proportional.insert(0, "ui".into());
         }
         semibold_chain.insert(0, "ui-semibold".into());
+        if let Some(emoji) = fonts.emoji {
+            defs.font_data
+                .insert("ui-emoji".into(), Arc::new(FontData::from_owned(emoji)));
+            for family in [FontFamily::Proportional, FontFamily::Monospace] {
+                if let Some(chain) = defs.families.get_mut(&family) {
+                    chain.push("ui-emoji".into());
+                }
+            }
+            semibold_chain.push("ui-emoji".into());
+        }
     }
     defs.families.insert(semibold(), semibold_chain);
     defs

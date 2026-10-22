@@ -7,8 +7,8 @@ use crate::task::clean_title;
 use jiff::SignedDuration;
 
 use crate::{
-    Category, CategoryKind, Id, MeetingToggle, NewCategory, Placement, Rgb, Session, Settings,
-    SettingsError, Switch, Task, TimerTarget,
+    Block, BlockDraft, Category, CategoryKind, Id, MeetingToggle, NewCategory, Period, Placement,
+    Rgb, Session, Settings, SettingsError, Switch, Target, Task, TimerTarget,
 };
 
 /// Columns every record carries so a future sync can merge and propagate deletes.
@@ -213,18 +213,40 @@ pub trait SessionRepo: TaskRepo + CategoryRepo {
     }
 
     /// Starts a meeting (pausing whatever ran) or ends the running one.
+    /// Ending a meeting restarts the work it interrupted, at the same instant.
     fn toggle_meeting(&self) -> RepoResult<MeetingToggle> {
         if let Some(meeting) = self.running()?.filter(Session::is_meeting) {
-            let ended = self.end_running(None)?;
-            return Ok(MeetingToggle::Ended {
-                meeting: ended.unwrap_or(meeting),
-            });
+            let paused = self.paused_by(&meeting)?;
+            let meeting = self.end_running(None)?.unwrap_or(meeting);
+            let resumed = match paused {
+                Some(work) => match self.start(TimerTarget::resuming(&work)) {
+                    Ok(session) => Some(session),
+                    // The task was deleted during the meeting: nothing to restart.
+                    Err(RepoError::NotFound(_)) => None,
+                    Err(e) => return Err(e),
+                },
+                None => None,
+            };
+            return Ok(MeetingToggle::Ended { meeting, resumed });
         }
         let category = first_of_kind(self, CategoryKind::Meeting)?;
         let switch = self.switch_to(None, category.meta.id, CategoryKind::Meeting)?;
         Ok(MeetingToggle::Started {
             paused: switch.ended,
         })
+    }
+
+    /// The work session `meeting` interrupted: the one that ended at the very
+    /// instant the meeting started. Stored data, so it survives a restart.
+    fn paused_by(&self, meeting: &Session) -> RepoResult<Option<Session>> {
+        let just_before = meeting
+            .started_at
+            .checked_sub(SignedDuration::from_millis(1))
+            .unwrap_or(meeting.started_at);
+        Ok(self
+            .sessions_since(just_before)?
+            .into_iter()
+            .find(|s| s.ended_at == Some(meeting.started_at) && !s.is_break() && !s.is_meeting()))
     }
 
     /// If the app was gone longer than `max_gap` (closed, or the PC slept)
@@ -263,4 +285,42 @@ fn first_of_kind(repo: &(impl CategoryRepo + ?Sized), kind: CategoryKind) -> Rep
         .into_iter()
         .find(|c| c.kind == kind)
         .ok_or(RepoError::Invalid(missing))
+}
+
+/// Targets, one per category and period. Backends implement the primitives;
+/// the provided method validates.
+pub trait TargetRepo {
+    fn targets(&self) -> RepoResult<Vec<Target>>;
+    /// Creates or replaces the live target for this category and period.
+    fn write_target(&self, category_id: Id, period: Period, minutes: u32) -> RepoResult<Target>;
+    fn delete_target(&self, id: Id) -> RepoResult<()>;
+
+    /// Sets a category's target for a period, in whole hours (1 to the
+    /// period's maximum). Setting it again replaces it.
+    fn set_target(&self, category_id: Id, period: Period, hours: u32) -> RepoResult<Target> {
+        if hours == 0 || hours > period.max_hours() {
+            return Err(RepoError::Invalid(match period {
+                Period::Week => "a weekly target must be 1–200 hours",
+                Period::Month => "a monthly target must be 1–800 hours",
+            }));
+        }
+        self.write_target(category_id, period, hours * 60)
+    }
+}
+
+/// Scheduled blocks. Backends implement the primitives; the provided
+/// methods validate.
+pub trait BlockRepo {
+    fn blocks(&self) -> RepoResult<Vec<Block>>;
+    fn insert_block(&self, draft: &BlockDraft) -> RepoResult<Block>;
+    fn write_block(&self, id: Id, draft: &BlockDraft) -> RepoResult<Block>;
+    fn delete_block(&self, id: Id) -> RepoResult<()>;
+
+    fn add_block(&self, draft: &BlockDraft) -> RepoResult<Block> {
+        self.insert_block(&draft.validated()?)
+    }
+
+    fn update_block(&self, id: Id, draft: &BlockDraft) -> RepoResult<Block> {
+        self.write_block(id, &draft.validated()?)
+    }
 }

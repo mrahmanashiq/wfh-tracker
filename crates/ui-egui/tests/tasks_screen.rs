@@ -45,18 +45,16 @@ fn hover_row(h: &mut Harness<'_, State>, title: &str) {
     h.run();
 }
 
-/// Opens the "More" menu of the row named `row` and picks `item`.
-fn row_menu(h: &mut Harness<'_, State>, row: &str, item: &str) {
+/// Hovers the row named `row` and clicks its `icon` (e.g. "Edit", "Delete").
+fn row_icon(h: &mut Harness<'_, State>, row: &str, icon: &str) {
     hover_row(h, row);
-    h.get_by_label("More").click();
-    h.run();
-    h.get_by_label(item).click();
+    h.get_by_label(icon).click();
     h.run();
 }
 
 /// Adds a sub-task under the top-level task named `parent`.
 fn add_subtask(h: &mut Harness<'_, State>, parent: &str, title: &str) {
-    row_menu(h, parent, "Add sub-task");
+    row_icon(h, parent, "Add sub-task");
     h.get_by_label("Sub-task title")
         .set_text_value_accesskit(title);
     h.run();
@@ -104,7 +102,7 @@ fn deleting_a_task_removes_it_and_its_subtasks() {
     let mut h = checkout_with_two_subtasks();
     add_task(&mut h, "Other");
 
-    row_menu(&mut h, "Checkout", "Delete");
+    row_icon(&mut h, "Checkout", "Delete");
     h.get_by_label("Confirm delete").click();
     h.run();
 
@@ -144,4 +142,24 @@ fn start_and_stop_run_a_timer_on_a_task() {
     h.get_by_label("Stop").click();
     h.run();
     assert!(h.state().store.running().unwrap().is_none());
+}
+
+#[test]
+fn each_row_shows_todays_time_and_a_parent_includes_its_subtasks() {
+    let mut h = checkout_with_two_subtasks();
+    let tasks = h.state().store.list_live().unwrap();
+    let id = |title: &str| tasks.iter().find(|t| t.title == title).unwrap().meta.id;
+    let store = &h.state().store;
+    store
+        .start(wt_core::TimerTarget::Task(id("Validation")))
+        .unwrap();
+    h.state().clock.advance(jiff::SignedDuration::from_mins(25));
+    store.start(wt_core::TimerTarget::Task(id("API"))).unwrap();
+    h.state().clock.advance(jiff::SignedDuration::from_mins(40));
+    store.stop().unwrap();
+    h.run();
+
+    h.get_by_label("25m");
+    h.get_by_label("40m");
+    h.get_by_label("1h 05m");
 }

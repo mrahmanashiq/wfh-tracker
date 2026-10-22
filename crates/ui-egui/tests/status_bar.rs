@@ -49,7 +49,7 @@ fn harness() -> Harness<'static, State> {
     Harness::new_ui_state(
         |ui, s: &mut State| {
             s.bar
-                .ui(ui, &s.store, &Settings::default(), s.clock.as_ref());
+                .ui(ui, &s.store, &Settings::default(), s.clock.as_ref(), &[]);
             s.bar.quick_start(ui, &s.store);
         },
         State {
@@ -79,6 +79,7 @@ impl State {
             &Settings::default(),
             self.clock.as_ref(),
             &self.notifier,
+            &[],
         );
     }
 
@@ -99,7 +100,7 @@ fn shows_the_running_task_and_todays_office_time() {
 }
 
 #[test]
-fn meeting_pauses_work_and_offers_to_resume_it_afterwards() {
+fn ending_a_meeting_restarts_the_interrupted_task() {
     let mut h = harness();
     h.state().start_checkout();
     h.run();
@@ -110,10 +111,8 @@ fn meeting_pauses_work_and_offers_to_resume_it_afterwards() {
 
     h.get_by_label("End meeting").click();
     h.run();
-    assert_eq!(h.state().running_kind(), None);
 
-    h.get_by_label("Resume Checkout").click();
-    h.run();
+    // No click needed: ending the meeting restarts the interrupted task.
     let running = h.state().store.running().unwrap().unwrap();
     assert_eq!(running.task_id, Some(h.state().checkout.meta.id));
 }
@@ -218,4 +217,18 @@ fn on_a_day_off_all_office_time_shows_as_overtime() {
     h.run();
 
     h.get_by_label("Office 1h 30m · day off, 1h 30m overtime");
+}
+
+#[test]
+fn the_running_timer_shows_the_tasks_total_for_today_not_just_this_stretch() {
+    let mut h = harness();
+    h.state().start_checkout();
+    h.state().later(30);
+    h.state().store.toggle_meeting().unwrap();
+    h.state().later(10);
+    h.state().start_checkout();
+    h.state().later(5);
+    h.run();
+
+    h.get_by_label("00:35:00");
 }

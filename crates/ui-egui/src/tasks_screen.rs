@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
 use egui::{
-    Align, Button, ComboBox, CornerRadius, DragValue, FontId, Layout, Popup, RichText, Sense,
-    Shape, Stroke, TextEdit, Ui, vec2,
+    Align, Button, ComboBox, CornerRadius, DragValue, FontId, Layout, RichText, Sense, Shape,
+    Stroke, TextEdit, Ui, vec2,
 };
-use jiff::Timestamp;
+use jiff::SignedDuration;
 use wt_core::repo::RepoResult;
 use wt_core::{
     Category, CategoryRepo, Clock, Id, Placement, SessionRepo, Settings, Task, TaskRepo,
-    TimerTarget, today_view,
+    TimerTarget, duration_text, today_view, tracked_time,
 };
 
 use crate::theme::palette;
@@ -26,13 +26,10 @@ pub struct TasksScreen {
     renaming: Option<EditDraft>,
     confirm_delete: Option<Id>,
     message: Option<String>,
-    /// The task whose timer is running and when it started; refreshed every frame.
-    running: Option<(Id, Timestamp)>,
+    /// The task whose timer is running; refreshed every frame.
+    running: Option<Id>,
     /// The row under the pointer last frame; only it shows its actions.
     hovered: Option<Id>,
-    /// The row whose "More" menu is open; it keeps its actions while the
-    /// pointer is over the menu, outside the row.
-    menu_open: Option<Id>,
 }
 
 /// A task being edited. Category and break interval apply to top-level tasks only.
@@ -65,17 +62,23 @@ struct Row<'a> {
     progress: Option<(usize, usize)>,
     /// Shown as a tag on top-level rows only.
     category: Option<&'a Category>,
+    /// Time tracked on it today (a parent includes its sub-tasks).
+    time: SignedDuration,
 }
 
 impl TasksScreen {
     pub fn ui(&mut self, ui: &mut Ui, store: &dyn SessionRepo, clock: &dyn Clock) {
         let tasks: &dyn TaskRepo = store;
         let categories: &dyn CategoryRepo = store;
-        self.running = store
-            .running()
-            .ok()
-            .flatten()
-            .and_then(|s| s.task_id.map(|t| (t, s.started_at)));
+        let now = clock.now();
+        let running = store.running().ok().flatten();
+        self.running = running.as_ref().and_then(|s| s.task_id);
+        let sessions = store
+            .sessions_since(
+                now.checked_sub(SignedDuration::from_hours(48))
+                    .unwrap_or(now),
+            )
+            .unwrap_or_default();
 
         let loaded = categories.list().and_then(|c| Ok((c, tasks.list_live()?)));
         let (cats, all) = match loaded {
@@ -112,18 +115,25 @@ impl TasksScreen {
                 ui.label(RichText::new("Nothing on your list today.").color(p.secondary));
             });
         }
-        let now = clock.now();
+        let tz = clock.time_zone();
+        let own_time = |id: Id| tracked_time(&sessions, TimerTarget::Task(id), today, &tz, now);
         let mut hovered = None;
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .show(ui, |ui| {
                 for tree in &view {
+                    let family_time = all
+                        .iter()
+                        .filter(|t| t.parent_id == Some(tree.task.meta.id))
+                        .map(|t| own_time(t.meta.id))
+                        .fold(own_time(tree.task.meta.id), SignedDuration::saturating_add);
                     let top = Row {
                         task: &tree.task,
                         progress: tree.progress,
                         category: by_id.get(&tree.task.category_id).copied(),
+                        time: family_time,
                     };
-                    self.task_row(ui, &top, &cats, now, &mut hovered, &mut action);
+                    self.task_row(ui, &top, &cats, &mut hovered, &mut action);
                     let has_children = !tree.subtasks.is_empty()
                         || self
                             .adding_under
@@ -139,8 +149,9 @@ impl TasksScreen {
                                         task: sub,
                                         progress: None,
                                         category: None,
+                                        time: own_time(sub.meta.id),
                                     };
-                                    self.task_row(ui, &row, &cats, now, &mut hovered, &mut action);
+                                    self.task_row(ui, &row, &cats, &mut hovered, &mut action);
                                 }
                                 self.subtask_field(ui, tree.task.meta.id, &mut action);
                             });
@@ -194,15 +205,13 @@ impl TasksScreen {
         ui: &mut Ui,
         row: &Row<'_>,
         cats: &[Category],
-        now: Timestamp,
         hovered: &mut Option<Id>,
         action: &mut Option<Action>,
     ) {
         let p = palette(ui);
         let id = row.task.meta.id;
-        let running_since = self.running.filter(|(t, _)| *t == id).map(|(_, at)| at);
-        let show_actions =
-            running_since.is_some() || self.hovered == Some(id) || self.menu_open == Some(id);
+        let running = self.running == Some(id);
+        let show_actions = running || self.hovered == Some(id);
 
         let background = ui.painter().add(Shape::Noop);
         let inner = ui.allocate_ui_with_layout(
@@ -218,7 +227,7 @@ impl TasksScreen {
                 if round_check(ui, done, &row.task.title).clicked() {
                     *action = Some(Action::Toggle(id, !done));
                 }
-                title(ui, &row.task.title, done, running_since.is_some());
+                title(ui, &row.task.title, done, running);
                 if let Some((finished, total)) = row.progress {
                     progress_pie(ui, finished, total);
                 }
@@ -235,30 +244,31 @@ impl TasksScreen {
                         }
                         return;
                     }
-                    if !show_actions {
+                    if show_actions {
+                        self.row_icons(ui, row.task, action);
+                    }
+                    if running {
+                        if icon_button(ui, Icon::Stop, "Stop", p.accent).clicked() {
+                            *action = Some(Action::Stop);
+                        }
+                        ui.label(RichText::new(elapsed(row.time)).color(p.accent));
                         return;
                     }
-                    self.more_menu(ui, row.task, action);
-                    match running_since {
-                        Some(since) => {
-                            if icon_button(ui, Icon::Stop, "Stop", p.accent).clicked() {
-                                *action = Some(Action::Stop);
-                            }
-                            ui.label(
-                                RichText::new(elapsed(now.duration_since(since))).color(p.accent),
-                            );
-                        }
-                        None => {
-                            if icon_button(ui, Icon::Play, "Start", p.secondary).clicked() {
-                                *action = Some(Action::Start(id));
-                            }
-                        }
+                    if show_actions && icon_button(ui, Icon::Play, "Start", p.secondary).clicked() {
+                        *action = Some(Action::Start(id));
+                    }
+                    if row.time.is_positive() {
+                        ui.label(
+                            RichText::new(duration_text(row.time))
+                                .small()
+                                .color(p.secondary),
+                        );
                     }
                 });
             },
         );
         let rect = inner.response.rect;
-        let fill = if running_since.is_some() {
+        let fill = if running {
             Some(p.accent_soft)
         } else if self.hovered == Some(id) {
             Some(p.hover)
@@ -276,38 +286,25 @@ impl TasksScreen {
         }
     }
 
-    /// The "⋯" menu: rename, add a sub-task, delete.
-    fn more_menu(&mut self, ui: &mut Ui, task: &Task, action: &mut Option<Action>) {
+    /// The row's icons, shown on hover: delete, edit, add a sub-task.
+    fn row_icons(&self, ui: &mut Ui, task: &Task, action: &mut Option<Action>) {
         let p = palette(ui);
         let id = task.meta.id;
         let top_level = task.parent_id.is_none();
-        let button = icon_button(ui, Icon::More, "More", p.secondary);
-        let popup_id = Popup::default_response_id(&button);
-        Popup::menu(&button).show(|ui| {
-            ui.set_min_width(150.0);
-            if ui.button("Rename").clicked() {
-                *action = Some(Action::OpenRename(EditDraft {
-                    id,
-                    title: task.title.clone(),
-                    category: top_level.then_some(task.category_id),
-                    break_interval: task.break_interval_min,
-                    top_level,
-                }));
-                ui.close();
-            }
-            if top_level && ui.button("Add sub-task").clicked() {
-                *action = Some(Action::OpenSubtask(id));
-                ui.close();
-            }
-            if ui.button(RichText::new("Delete").color(p.danger)).clicked() {
-                *action = Some(Action::ArmDelete(Some(id)));
-                ui.close();
-            }
-        });
-        if Popup::is_id_open(ui.ctx(), popup_id) {
-            self.menu_open = Some(id);
-        } else if self.menu_open == Some(id) {
-            self.menu_open = None;
+        if let Some(DeleteClick::Arm) = delete_buttons(ui, false) {
+            *action = Some(Action::ArmDelete(Some(id)));
+        }
+        if icon_button(ui, Icon::Pencil, "Edit", p.secondary).clicked() {
+            *action = Some(Action::OpenRename(EditDraft {
+                id,
+                title: task.title.clone(),
+                category: top_level.then_some(task.category_id),
+                break_interval: task.break_interval_min,
+                top_level,
+            }));
+        }
+        if top_level && icon_button(ui, Icon::Plus, "Add sub-task", p.secondary).clicked() {
+            *action = Some(Action::OpenSubtask(id));
         }
     }
 
@@ -438,7 +435,7 @@ fn edit_fields(ui: &mut Ui, draft: &mut EditDraft, cats: &[Category], action: &m
 }
 
 /// `42:13`, or `1:02:05` past an hour.
-fn elapsed(d: jiff::SignedDuration) -> String {
+fn elapsed(d: SignedDuration) -> String {
     let s = d.as_secs().max(0);
     match s / 3600 {
         0 => format!("{}:{:02}", s / 60, s % 60),

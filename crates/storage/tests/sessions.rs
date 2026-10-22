@@ -133,6 +133,57 @@ fn the_meeting_toggle_pauses_work_and_hands_back_what_to_resume() {
     w.later(40);
     let ended = w.store.toggle_meeting().unwrap();
     assert!(matches!(ended, MeetingToggle::Ended { .. }), "{ended:?}");
+}
+
+#[test]
+fn ending_a_meeting_restarts_the_task_it_interrupted_at_the_same_instant() {
+    let w = world();
+    w.store.start(TimerTarget::Task(w.api.meta.id)).unwrap();
+    w.later(20);
+    w.store.toggle_meeting().unwrap();
+    w.later(40);
+
+    let ended = w.store.toggle_meeting().unwrap();
+
+    let MeetingToggle::Ended { meeting, resumed } = ended else {
+        panic!("expected the meeting to end, got {ended:?}");
+    };
+    let resumed = resumed.expect("the task should restart");
+    assert_eq!(resumed.task_id, Some(w.api.meta.id));
+    assert_eq!(Some(resumed.started_at), meeting.ended_at);
+    assert_eq!(w.running().unwrap().task_id, Some(w.api.meta.id));
+}
+
+#[test]
+fn a_meeting_started_while_idle_restarts_nothing() {
+    let w = world();
+    w.store.toggle_meeting().unwrap();
+    w.later(30);
+
+    let ended = w.store.toggle_meeting().unwrap();
+
+    assert!(
+        matches!(ended, MeetingToggle::Ended { resumed: None, .. }),
+        "{ended:?}"
+    );
+    assert!(w.running().is_none());
+}
+
+#[test]
+fn a_task_deleted_during_the_meeting_is_not_restarted() {
+    let w = world();
+    w.store.start(TimerTarget::Task(w.api.meta.id)).unwrap();
+    w.later(20);
+    w.store.toggle_meeting().unwrap();
+    TaskRepo::delete(&w.store, w.api.meta.id).unwrap();
+    w.later(40);
+
+    let ended = w.store.toggle_meeting().unwrap();
+
+    assert!(
+        matches!(ended, MeetingToggle::Ended { resumed: None, .. }),
+        "{ended:?}"
+    );
     assert!(w.running().is_none());
 }
 

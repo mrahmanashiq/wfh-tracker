@@ -8,6 +8,12 @@ use crate::repo::Meta;
 #[error("{0}")]
 pub struct ParseError(String);
 
+impl ParseError {
+    pub fn new(message: String) -> Self {
+        Self(message)
+    }
+}
+
 /// What a category means to the rules. Office and Meeting count toward the
 /// office clock; Break never counts toward anything.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

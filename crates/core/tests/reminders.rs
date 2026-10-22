@@ -42,6 +42,7 @@ fn tick_with(
         tz: &TimeZone::UTC,
         settings: &Settings::default(),
         break_interval_min,
+        blocks: &[],
     })
 }
 

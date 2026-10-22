@@ -1,23 +1,27 @@
 //! SQLite-backed repositories for WFH Tracker.
 
+mod block;
 mod category;
 mod session;
 mod settings;
+mod target;
 mod task;
 
 use std::path::Path;
 use std::sync::Arc;
 
 use jiff::Timestamp;
-use rusqlite::Connection;
+use rusqlite::{Connection, Row, params};
 use rusqlite_migration::{M, Migrations};
-use wt_core::{Clock, Id, RepoError};
+use wt_core::repo::RepoResult;
+use wt_core::{BlockRepo, Clock, Id, Meta, RepoError, TargetRepo};
 
 fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
         M::up(include_str!("migrations/001_foundation.sql")),
         M::up(include_str!("migrations/002_tasks.sql")),
         M::up(include_str!("migrations/003_tracking.sql")),
+        M::up(include_str!("migrations/004_planning.sql")),
     ])
 }
 
@@ -83,6 +87,80 @@ fn parse_id(s: &str) -> Result<Id, RepoError> {
 fn parse_ts(s: &str) -> Result<Timestamp, RepoError> {
     s.parse()
         .map_err(|_| RepoError::Corrupt(format!("bad timestamp `{s}`")))
+}
+
+// ---- Shared row helpers ------------------------------------------------------
+
+/// The three sync timestamps of a row, starting at column `from`.
+pub(crate) fn read_stamps(row: &Row<'_>, from: usize) -> rusqlite::Result<[Option<String>; 3]> {
+    Ok([row.get(from)?, row.get(from + 1)?, row.get(from + 2)?])
+}
+
+pub(crate) fn into_meta(
+    id: &str,
+    [created, updated, deleted]: [Option<String>; 3],
+) -> RepoResult<Meta> {
+    let required =
+        |v: Option<String>| v.ok_or_else(|| RepoError::Corrupt("missing timestamp".into()));
+    Ok(Meta {
+        id: parse_id(id)?,
+        created_at: parse_ts(&required(created)?)?,
+        updated_at: parse_ts(&required(updated)?)?,
+        deleted_at: deleted.as_deref().map(parse_ts).transpose()?,
+    })
+}
+
+impl SqliteStore {
+    /// Live targets and blocks that use a category, named for an "in use" message.
+    pub(crate) fn plan_users(&self, category_id: Id) -> RepoResult<Vec<String>> {
+        let mut users: Vec<String> = TargetRepo::targets(self)?
+            .into_iter()
+            .filter(|t| t.category_id == category_id)
+            .map(|t| format!("{}ly target", t.period))
+            .collect();
+        users.extend(
+            BlockRepo::blocks(self)?
+                .into_iter()
+                .filter(|b| b.category_id == category_id)
+                .map(|b| {
+                    let name = if b.label.is_empty() {
+                        b.times_text()
+                    } else {
+                        b.label
+                    };
+                    format!("{name} block")
+                }),
+        );
+        Ok(users)
+    }
+
+    pub(crate) fn live_rows<R>(
+        &self,
+        sql: &str,
+        read: fn(&Row<'_>) -> rusqlite::Result<R>,
+    ) -> RepoResult<Vec<R>> {
+        let mut stmt = self.conn.prepare(sql).map_err(backend)?;
+        let rows = stmt
+            .query_map([], read)
+            .map_err(backend)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(backend)?;
+        Ok(rows)
+    }
+
+    pub(crate) fn soft_delete(&self, table: &str, id: Id) -> RepoResult<()> {
+        let changed = self
+            .conn
+            .execute(
+                &format!(
+                    "UPDATE {table} SET deleted_at = ?2, updated_at = ?2
+                     WHERE id = ?1 AND deleted_at IS NULL"
+                ),
+                params![id.to_string(), self.now()],
+            )
+            .map_err(backend)?;
+        require_changed(id, changed)
+    }
 }
 
 #[cfg(test)]

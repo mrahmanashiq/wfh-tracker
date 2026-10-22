@@ -125,8 +125,10 @@ impl CategoryRepo for SqliteStore {
             .map_err(backend)?
             .collect::<Result<Vec<_>, _>>()
             .map_err(backend)?;
-        if !tasks.is_empty() {
-            return Err(RepoError::InUse { tasks });
+        let mut users = tasks;
+        users.extend(self.plan_users(id)?);
+        if !users.is_empty() {
+            return Err(RepoError::InUse { tasks: users });
         }
         let changed = self
             .conn

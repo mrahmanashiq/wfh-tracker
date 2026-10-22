@@ -2,6 +2,8 @@
 //! through the traits in `wt-core`, so the UI can be replaced on its own.
 
 mod categories_screen;
+mod planning_screen;
+mod reports_screen;
 mod settings_screen;
 mod status_bar;
 mod tasks_screen;
@@ -20,6 +22,8 @@ use wt_core::{Autostart, Clock, Notifier, SessionRepo, SettingsRepo};
 use crate::widgets::Icon;
 
 pub use categories_screen::CategoriesScreen;
+pub use planning_screen::PlanningScreen;
+pub use reports_screen::ReportsScreen;
 pub use settings_screen::SettingsScreen;
 pub use status_bar::StatusBar;
 pub use tasks_screen::TasksScreen;
@@ -30,8 +34,12 @@ pub use updates::UpdateController;
 const TICK_EVERY: Duration = Duration::from_secs(15);
 
 /// Anything that stores everything the UI needs.
-pub trait Store: SettingsRepo + SessionRepo {}
-impl<T: SettingsRepo + SessionRepo> Store for T {}
+pub trait Store: SettingsRepo + PlanStore {}
+impl<T: SettingsRepo + PlanStore> Store for T {}
+
+/// What the planning screen needs: sessions (for progress), targets, blocks.
+pub trait PlanStore: SessionRepo + wt_core::TargetRepo + wt_core::BlockRepo {}
+impl<T: SessionRepo + wt_core::TargetRepo + wt_core::BlockRepo> PlanStore for T {}
 
 /// Requests from outside the UI thread (tray, global hotkey).
 enum ShellCommand {
@@ -81,6 +89,9 @@ pub struct WfhApp<S> {
     status: StatusBar,
     tasks: TasksScreen,
     categories: CategoriesScreen,
+    reports: ReportsScreen,
+    planning: PlanningScreen,
+    clipboard: Box<dyn wt_core::Clipboard>,
     settings: SettingsScreen,
     updates: UpdateController,
     quitting: Arc<AtomicBool>,
@@ -90,6 +101,8 @@ pub struct WfhApp<S> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Screen {
     Tasks,
+    Planning,
+    Reports,
     Categories,
     Settings,
 }
@@ -112,6 +125,7 @@ pub struct Services {
     pub fonts: Option<UiFonts>,
     /// `None` in development builds.
     pub updater: Option<Arc<dyn wt_core::Updater>>,
+    pub clipboard: Box<dyn wt_core::Clipboard>,
 }
 
 impl<S: Store> WfhApp<S> {
@@ -141,6 +155,9 @@ impl<S: Store> WfhApp<S> {
             status: StatusBar::default(),
             tasks: TasksScreen::default(),
             categories: CategoriesScreen::default(),
+            reports: ReportsScreen::default(),
+            planning: PlanningScreen::default(),
+            clipboard: services.clipboard,
             settings,
             updates: UpdateController::new(services.updater),
             quitting,
@@ -168,11 +185,13 @@ impl<S: Store> eframe::App for WfhApp<S> {
         if self.last_tick.is_none_or(|t| t.elapsed() >= TICK_EVERY) {
             self.last_tick = Some(Instant::now());
             let settings = self.store.load().unwrap_or_default();
+            let blocks = wt_core::BlockRepo::blocks(&self.store).unwrap_or_default();
             self.status.tick(
                 &self.store,
                 &settings,
                 self.clock.as_ref(),
                 self.notifier.as_ref(),
+                &blocks,
             );
         }
         self.updates.tick(ctx);
@@ -195,6 +214,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
         ui.ctx().request_repaint_after(Duration::from_secs(1));
 
         let settings = self.store.load().unwrap_or_default();
+        let blocks = wt_core::BlockRepo::blocks(&self.store).unwrap_or_default();
         let p = theme::palette(ui);
         egui::Panel::left("nav")
             .resizable(false)
@@ -215,7 +235,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
             )
             .show(ui, |ui| {
                 self.status
-                    .ui(ui, &self.store, &settings, self.clock.as_ref());
+                    .ui(ui, &self.store, &settings, self.clock.as_ref(), &blocks);
                 self.updates.header_ui(ui);
             });
         egui::CentralPanel::default()
@@ -226,6 +246,17 @@ impl<S: Store> eframe::App for WfhApp<S> {
             )
             .show(ui, |ui| match self.screen {
                 Screen::Tasks => self.tasks.ui(ui, &self.store, self.clock.as_ref()),
+                Screen::Planning => {
+                    self.planning
+                        .ui(ui, &self.store, &settings, self.clock.as_ref());
+                }
+                Screen::Reports => self.reports.ui(
+                    ui,
+                    &self.store,
+                    &settings,
+                    self.clock.as_ref(),
+                    self.clipboard.as_ref(),
+                ),
                 Screen::Categories => self.categories.ui(ui, &self.store),
                 Screen::Settings => {
                     self.settings.ui(ui, &self.store, self.autostart.as_ref());
@@ -252,6 +283,8 @@ impl<S: Store> WfhApp<S> {
             .unwrap_or(0);
         let items = [
             (Screen::Tasks, Icon::Star, p.star, "Today", Some(open)),
+            (Screen::Planning, Icon::Target, p.accent, "Planning", None),
+            (Screen::Reports, Icon::Doc, p.accent, "Reports", None),
             (Screen::Categories, Icon::Tag, p.accent, "Categories", None),
             (Screen::Settings, Icon::Gear, p.secondary, "Settings", None),
         ];

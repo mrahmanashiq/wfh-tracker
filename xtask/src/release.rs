@@ -12,7 +12,7 @@ const REPO: &str = "mrahmanashiq/wfh-tracker";
 /// Writes `packaging/icon.ico` (16–256 px) from the code-drawn app icon.
 pub fn write_icon(root: &Path) -> Result<PathBuf, String> {
     let path = root.join("packaging").join("icon.ico");
-    std::fs::write(&path, ico(&[16, 24, 32, 48, 64, 128, 256])).map_err(|e| e.to_string())?;
+    std::fs::write(&path, icon_art::app_icon_ico()).map_err(|e| e.to_string())?;
     Ok(path)
 }
 
@@ -149,47 +149,4 @@ fn run(cmd: &mut Command) -> Result<(), String> {
     } else {
         Err(format!("{cmd:?} failed"))
     }
-}
-
-/// An `.ico` with one 32-bit image per size (BMP data, as Windows expects).
-fn ico(sizes: &[u32]) -> Vec<u8> {
-    let images: Vec<Vec<u8>> = sizes.iter().map(|&s| bmp_entry(s)).collect();
-    let mut out = Vec::new();
-    out.extend_from_slice(&[0, 0, 1, 0]);
-    out.extend_from_slice(&(sizes.len() as u16).to_le_bytes());
-    let mut offset = 6 + 16 * sizes.len() as u32;
-    for (&size, image) in sizes.iter().zip(&images) {
-        let side = if size >= 256 { 0 } else { size as u8 };
-        out.extend_from_slice(&[side, side, 0, 0]);
-        out.extend_from_slice(&1u16.to_le_bytes()); // planes
-        out.extend_from_slice(&32u16.to_le_bytes()); // bits per pixel
-        out.extend_from_slice(&(image.len() as u32).to_le_bytes());
-        out.extend_from_slice(&offset.to_le_bytes());
-        offset += image.len() as u32;
-    }
-    images.iter().for_each(|i| out.extend_from_slice(i));
-    out
-}
-
-/// BITMAPINFOHEADER + bottom-up BGRA pixels + an all-zero AND mask.
-fn bmp_entry(size: u32) -> Vec<u8> {
-    let rgba = icon_art::app_icon_rgba(size);
-    let mask_row = size.div_ceil(32) * 4;
-    let mut out = Vec::new();
-    for v in [40u32, size, size * 2] {
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-    out.extend_from_slice(&1u16.to_le_bytes());
-    out.extend_from_slice(&32u16.to_le_bytes());
-    for v in [0u32, size * size * 4 + mask_row * size, 0, 0, 0, 0] {
-        out.extend_from_slice(&v.to_le_bytes());
-    }
-    for y in (0..size).rev() {
-        for x in 0..size {
-            let i = ((y * size + x) * 4) as usize;
-            out.extend_from_slice(&[rgba[i + 2], rgba[i + 1], rgba[i], rgba[i + 3]]);
-        }
-    }
-    out.resize(out.len() + (mask_row * size) as usize, 0);
-    out
 }

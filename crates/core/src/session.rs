@@ -84,6 +84,14 @@ pub enum TimerTarget {
 }
 
 impl TimerTarget {
+    /// Whether `session` was time spent on this target.
+    pub fn matches(self, session: &Session) -> bool {
+        match self {
+            Self::Task(id) => session.task_id == Some(id),
+            Self::Category(id) => session.task_id.is_none() && session.category_id == id,
+        }
+    }
+
     /// What to resume after a meeting or break interrupted `session`.
     pub fn resuming(session: &Session) -> Self {
         session
@@ -102,12 +110,28 @@ pub struct Switch {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MeetingToggle {
     /// A meeting started; `paused` is the session it interrupted.
-    Started {
-        paused: Option<Session>,
-    },
+    Started { paused: Option<Session> },
+    /// The meeting ended; `resumed` is the restarted work it had interrupted.
     Ended {
         meeting: Session,
+        resumed: Option<Session>,
     },
+}
+
+/// Total time spent on `target` during the local `day`, counting a running
+/// session up to `now`, across every stretch (meetings and switches in between).
+pub fn tracked_time(
+    sessions: &[Session],
+    target: TimerTarget,
+    day: Date,
+    tz: &TimeZone,
+    now: Timestamp,
+) -> SignedDuration {
+    sessions
+        .iter()
+        .filter(|s| target.matches(s))
+        .map(|s| s.time_within(day, tz, now))
+        .fold(SignedDuration::ZERO, |sum, d| sum.saturating_add(d))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

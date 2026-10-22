@@ -2,7 +2,9 @@ use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
-use crate::{Id, OfficeStatus, Session, Settings, office_status, office_time};
+use std::collections::HashSet;
+
+use crate::{Block, Id, OfficeStatus, Session, Settings, office_status, office_time};
 
 /// Something the user should be told about.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -15,6 +17,8 @@ pub enum Notice {
     BreakDue,
     /// The running break has lasted the break length.
     BreakOver,
+    /// A scheduled block began and its timer isn't running.
+    BlockStarted { block: Id },
 }
 
 /// Everything one reminder check looks at.
@@ -27,6 +31,8 @@ pub struct Tick<'a> {
     pub settings: &'a Settings,
     /// The running task's own break interval, if it has one.
     pub break_interval_min: Option<u32>,
+    /// Scheduled blocks, for start reminders.
+    pub blocks: &'a [Block],
 }
 
 /// How often an ignored break reminder repeats.
@@ -43,6 +49,9 @@ pub struct Reminders {
     break_due: Option<(Timestamp, Timestamp)>,
     /// The break session `BreakOver` already fired for.
     break_over_for: Option<Id>,
+    /// Blocks already handled today (reminded, or skipped as already running),
+    /// keyed with their times so a block moved to later reminds again.
+    blocks_handled: HashSet<(Id, Date, u16, u16)>,
 }
 
 impl Reminders {
@@ -50,7 +59,28 @@ impl Reminders {
         let mut notices = Vec::new();
         self.check_office(&t, &mut notices);
         self.check_breaks(&t, &mut notices);
+        self.check_blocks(&t, &mut notices);
         notices
+    }
+
+    /// Reminds once per block per day while it's on, unless its category's
+    /// timer is already running.
+    fn check_blocks(&mut self, t: &Tick<'_>, notices: &mut Vec<Notice>) {
+        let local = t.now.to_zoned(t.tz.clone());
+        let today = local.date();
+        self.blocks_handled.retain(|(_, day, _, _)| *day == today);
+        let running = t.sessions.iter().find(|s| s.is_running());
+        for block in t.blocks.iter().filter(|b| b.is_on(&local)) {
+            let first_time =
+                self.blocks_handled
+                    .insert((block.meta.id, today, block.start_min, block.end_min));
+            let already_running = running.is_some_and(|s| s.category_id == block.category_id);
+            if first_time && !already_running {
+                notices.push(Notice::BlockStarted {
+                    block: block.meta.id,
+                });
+            }
+        }
     }
 
     fn check_office(&mut self, t: &Tick<'_>, notices: &mut Vec<Notice>) {
