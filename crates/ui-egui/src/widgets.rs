@@ -110,7 +110,6 @@ impl Icon {
                 let r = Rect::from_center_size(c, vec2(9.0, 9.0));
                 painter.rect_filled(r, CornerRadius::same(2), color);
             }
-            }
             Icon::Star => star(painter, c, 7.5, color),
             Icon::Tag => {
                 for (i, dy) in [-4.0, 0.0, 4.0].into_iter().enumerate() {
