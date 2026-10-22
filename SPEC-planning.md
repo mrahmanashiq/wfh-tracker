@@ -4,14 +4,14 @@ Status: **approved 2026-10-22** · Parent: [SPEC.md](SPEC.md) (Capability Map �
 
 ## Objective
 
-Let the user decide ahead of time how much time things deserve, and when. **Targets** say "Learning: 5h this week". **Scheduled blocks** say "Sun–Thu 21:00–22:00 is Learning". The app shows progress against targets and reminds the user when a block starts. Later, the `nudges` module uses blocks to know when to watch for Facebook and reels.
+Let the user decide ahead of time how much time things deserve, and when. **Targets** say "Learning: 5h this week". **Scheduled blocks** say "Sun–Thu 21:00-22:00 is Learning". The app shows progress against targets and reminds the user when a block starts. Later, the `nudges` module uses blocks to know when to watch for Facebook and reels.
 
 ### User stories
 
 1. On a new **Planning** screen I add a **target**: a category, a period (**week** or **month**), and a number of hours. I can edit and delete targets.
 2. Each target shows **progress for the current period**, e.g. `Learning · this week · 3h 20m / 5h`, with a progress bar. A met target turns green.
-3. I add a **scheduled block**: a category, the weekdays it applies to, a start and an end time (e.g. 21:00–22:00), and an optional label. I can edit and delete blocks.
-4. When a block starts, I get a notification: "Learning block 21:00–22:00 — start your timer". There's no notification if a timer for that category is already running.
+3. I add a **scheduled block**: a category, the weekdays it applies to, a start and an end time (e.g. 21:00-22:00), and an optional label. I can edit and delete blocks.
+4. When a block starts, I get a notification: "Learning block 21:00-22:00 — start your timer". There's no notification if a timer for that category is already running.
 5. While a block is on, the header shows it, e.g. `Learning block · until 22:00`.
 
 ## Domain rules

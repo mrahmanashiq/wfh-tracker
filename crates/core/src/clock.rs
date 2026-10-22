@@ -4,7 +4,7 @@ use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
-/// The only source of "now" — and of the user's time zone — for domain logic.
+/// The only source of "now" - and of the user's time zone - for domain logic.
 pub trait Clock: Send + Sync {
     fn now(&self) -> Timestamp;
     fn time_zone(&self) -> TimeZone;

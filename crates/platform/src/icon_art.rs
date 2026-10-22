@@ -32,7 +32,7 @@ pub fn app_icon_rgba(size: u32) -> Vec<u8> {
     rgba
 }
 
-/// The icon as a Windows `.ico` file, 16–256 px.
+/// The icon as a Windows `.ico` file, 16-256 px.
 pub fn app_icon_ico() -> Vec<u8> {
     ico(&[16, 24, 32, 48, 64, 128, 256])
 }

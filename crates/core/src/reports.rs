@@ -70,7 +70,7 @@ pub fn office_report(input: &ReportInput<'_>) -> String {
 
     let mut lines = vec![
         format!(
-            "Office report — {} — {} {target}",
+            "Office report - {} - {} {target}",
             date_text(input.day),
             hours_text(office)
         ),
@@ -80,11 +80,11 @@ pub fn office_report(input: &ReportInput<'_>) -> String {
 
     let deleted = day.deleted_time(CategoryKind::Office);
     if deleted.shows() {
-        lines.push(format!("(deleted task) — {}", duration_text(deleted)));
+        lines.push(format!("(deleted task) - {}", duration_text(deleted)));
     }
     let untasked = day.untasked_time(|s| s.kind == CategoryKind::Office);
     if untasked.shows() {
-        lines.push(format!("Other office work — {}", duration_text(untasked)));
+        lines.push(format!("Other office work - {}", duration_text(untasked)));
     }
 
     let meetings: Vec<SignedDuration> = day
@@ -94,24 +94,24 @@ pub fn office_report(input: &ReportInput<'_>) -> String {
         .map(|(_, t)| *t)
         .collect();
     lines.push(match meetings.len() {
-        0 => "Meetings — none".to_owned(),
-        n => format!("Meetings — {n} ({})", duration_text(sum(meetings))),
+        0 => "Meetings - none".to_owned(),
+        n => format!("Meetings - {n} ({})", duration_text(sum(meetings))),
     });
 
     lines.push(match office_status(office, input.settings, weekday) {
         OfficeStatus::Overtime { minutes } if off_day => {
             format!(
-                "Overtime — {}",
+                "Overtime - {}",
                 hours_text(SignedDuration::from_mins(minutes))
             )
         }
         OfficeStatus::Overtime { minutes } => {
             format!(
-                "Overtime — {}",
+                "Overtime - {}",
                 duration_text(SignedDuration::from_mins(minutes))
             )
         }
-        _ => "Overtime — none".to_owned(),
+        _ => "Overtime - none".to_owned(),
     });
     lines.join("\n")
 }
@@ -130,7 +130,7 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
         let time = day.untasked_time(|s| s.category_id == category.meta.id);
         if time.shows() {
             learning.push(format!(
-                "{} (no task) — {}",
+                "{} (no task) - {}",
                 category.name,
                 duration_text(time)
             ));
@@ -138,7 +138,7 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
     }
     let deleted = day.deleted_time(CategoryKind::Learning);
     if deleted.shows() {
-        learning.push(format!("(deleted task) — {}", duration_text(deleted)));
+        learning.push(format!("(deleted task) - {}", duration_text(deleted)));
     }
     let learning_total = day.kind_time(|k| k == CategoryKind::Learning);
     if learning_total.shows() {
@@ -152,7 +152,7 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
         .filter_map(|c| {
             let time = day.time_where(|s| s.category_id == c.meta.id);
             time.shows()
-                .then(|| format!("{} — {}", c.name, duration_text(time)))
+                .then(|| format!("{} - {}", c.name, duration_text(time)))
         })
         .collect();
     let personal_total = day.kind_time(is_personal);
@@ -165,7 +165,7 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
         .checked_sub(listed)
         .unwrap_or(SignedDuration::ZERO);
     if unlisted.shows() {
-        personal.push(format!("(deleted category) — {}", duration_text(unlisted)));
+        personal.push(format!("(deleted category) - {}", duration_text(unlisted)));
     }
     if personal_total.shows() {
         sections.push(section("Personal", personal_total, personal));
@@ -176,7 +176,7 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
     } else {
         sections.join("\n\n")
     };
-    format!("My time — {}\n\n{body}", date_text(input.day))
+    format!("My time - {}\n\n{body}", date_text(input.day))
 }
 
 fn is_personal(kind: CategoryKind) -> bool {
@@ -184,7 +184,7 @@ fn is_personal(kind: CategoryKind) -> bool {
 }
 
 fn section(title: &str, total: SignedDuration, lines: Vec<String>) -> String {
-    let mut out = vec![format!("{title} — {}", hours_text(total))];
+    let mut out = vec![format!("{title} - {}", hours_text(total))];
     out.extend(lines.into_iter().map(|l| format!("  {l}")));
     out.join("\n")
 }
@@ -352,7 +352,7 @@ impl<'a> Day<'a> {
             )
     }
 
-    /// `✅ Title — 50m`: ✅ when done by the end of the report day.
+    /// `✅ Title - 50m`: ✅ when done by the end of the report day.
     fn task_line(&self, task: &Task, kind: &dyn Fn(CategoryKind) -> bool) -> String {
         let mark = if self.done_by_day(task) { "✅" } else { "⏳" };
         with_time(
@@ -362,10 +362,10 @@ impl<'a> Day<'a> {
     }
 }
 
-/// `text — 50m`, or just `text` when no time was tracked (e.g. ticked only).
+/// `text - 50m`, or just `text` when no time was tracked (e.g. ticked only).
 fn with_time(text: &str, time: SignedDuration) -> String {
     if time.shows() {
-        format!("{text} — {}", duration_text(time))
+        format!("{text} - {}", duration_text(time))
     } else {
         text.to_owned()
     }

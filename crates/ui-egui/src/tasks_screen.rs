@@ -494,7 +494,7 @@ fn category_picker(
 ) {
     let current = cats.iter().find(|c| Some(c.meta.id) == *selected);
     let text = current.map_or_else(
-        || RichText::new("—"),
+        || RichText::new("-"),
         |c| RichText::new(&c.name).color(color32(c.color)),
     );
     ComboBox::from_id_salt(id_salt)

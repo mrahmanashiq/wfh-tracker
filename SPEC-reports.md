@@ -15,15 +15,15 @@ At the end of the day, one click puts an accurate plain-text office report on th
 ## Office report format
 
 ```
-Office report — Thu 22 Oct 2026 — 7h 45m (target 8h)
+Office report - Thu 22 Oct 2026 - 7h 45m (target 8h)
 
-Checkout redesign — 5h 15m
-  ✅ Payment form validation — 2h 10m
-  ⏳ Stripe API integration — 3h 05m
-✅ Review PR #482 — 50m
-Other office work — 20m
-Meetings — 3 (1h 20m)
-Overtime — none
+Checkout redesign - 5h 15m
+  ✅ Payment form validation - 2h 10m
+  ⏳ Stripe API integration - 3h 05m
+✅ Review PR #482 - 50m
+Other office work - 20m
+Meetings - 3 (1h 20m)
+Overtime - none
 ```
 
 | Line | Rule |
@@ -40,15 +40,15 @@ Overtime — none
 ## My time report format (private)
 
 ```
-My time — Thu 22 Oct 2026
+My time - Thu 22 Oct 2026
 
-Learning — 1h 20m
-  ✅ Rust async book, chapter 4 — 50m
-  Learning (no task) — 30m
+Learning - 1h 20m
+  ✅ Rust async book, chapter 4 - 50m
+  Learning (no task) - 30m
 
-Personal — 2h 10m
-  Family — 1h 30m
-  Social media — 40m
+Personal - 2h 10m
+  Family - 1h 30m
+  Social media - 40m
 ```
 
 - Learning: learning-kind tasks worked on or finished that day, then quick-start learning time as `<category> (no task)`.

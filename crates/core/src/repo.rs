@@ -333,8 +333,8 @@ pub trait TargetRepo {
     fn set_target(&self, category_id: Id, period: Period, hours: u32) -> RepoResult<Target> {
         if hours == 0 || hours > period.max_hours() {
             return Err(RepoError::Invalid(match period {
-                Period::Week => "a weekly target must be 1–200 hours",
-                Period::Month => "a monthly target must be 1–800 hours",
+                Period::Week => "a weekly target must be 1-200 hours",
+                Period::Month => "a monthly target must be 1-800 hours",
             }));
         }
         self.write_target(category_id, period, hours * 60)

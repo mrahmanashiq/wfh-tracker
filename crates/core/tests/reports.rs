@@ -211,15 +211,15 @@ fn the_office_report_matches_the_spec_example() {
 
     assert_eq!(
         d.office_report(THURSDAY, &TimeZone::UTC),
-        "Office report — Thu 22 Oct 2026 — 7h 45m (target 8h)\n\
+        "Office report - Thu 22 Oct 2026 - 7h 45m (target 8h)\n\
          \n\
-         Checkout redesign — 5h 15m\n  \
-         ✅ Payment form validation — 2h 10m\n  \
-         ⏳ Stripe API integration — 3h 05m\n\
-         ✅ Review PR #482 — 50m\n\
-         Other office work — 20m\n\
-         Meetings — 3 (1h 20m)\n\
-         Overtime — none"
+         Checkout redesign - 5h 15m\n  \
+         ✅ Payment form validation - 2h 10m\n  \
+         ⏳ Stripe API integration - 3h 05m\n\
+         ✅ Review PR #482 - 50m\n\
+         Other office work - 20m\n\
+         Meetings - 3 (1h 20m)\n\
+         Overtime - none"
     );
 }
 
@@ -237,11 +237,11 @@ fn overtime_and_time_on_a_deleted_task_are_reported() {
 
     assert_eq!(
         d.office_report(THURSDAY, &TimeZone::UTC),
-        "Office report — Thu 22 Oct 2026 — 9h 30m (target 8h)\n\
+        "Office report - Thu 22 Oct 2026 - 9h 30m (target 8h)\n\
          \n\
-         (deleted task) — 9h 30m\n\
-         Meetings — none\n\
-         Overtime — 30m"
+         (deleted task) - 9h 30m\n\
+         Meetings - none\n\
+         Overtime - 30m"
     );
 }
 
@@ -259,11 +259,11 @@ fn on_a_day_off_all_office_time_is_overtime() {
 
     assert_eq!(
         d.office_report(FRIDAY, &TimeZone::UTC),
-        "Office report — Fri 23 Oct 2026 — 3h 00m (day off)\n\
+        "Office report - Fri 23 Oct 2026 - 3h 00m (day off)\n\
          \n\
-         ⏳ Hotfix — 3h 00m\n\
-         Meetings — none\n\
-         Overtime — 3h 00m"
+         ⏳ Hotfix - 3h 00m\n\
+         Meetings - none\n\
+         Overtime - 3h 00m"
     );
 }
 
@@ -283,11 +283,11 @@ fn a_session_across_local_midnight_counts_only_its_part_of_the_day() {
 
     assert_eq!(
         d.office_report(THURSDAY, &dhaka),
-        "Office report — Thu 22 Oct 2026 — 1h 00m (target 8h)\n\
+        "Office report - Thu 22 Oct 2026 - 1h 00m (target 8h)\n\
          \n\
-         ⏳ Late deploy — 1h 00m\n\
-         Meetings — none\n\
-         Overtime — none"
+         ⏳ Late deploy - 1h 00m\n\
+         Meetings - none\n\
+         Overtime - none"
     );
 }
 
@@ -347,15 +347,15 @@ fn my_time_shows_learning_then_personal_time_by_category() {
 
     assert_eq!(
         d.my_time_report(THURSDAY, &TimeZone::UTC),
-        "My time — Thu 22 Oct 2026\n\
+        "My time - Thu 22 Oct 2026\n\
          \n\
-         Learning — 1h 20m\n  \
-         ✅ Rust async book, chapter 4 — 50m\n  \
-         Learning (no task) — 30m\n\
+         Learning - 1h 20m\n  \
+         ✅ Rust async book, chapter 4 - 50m\n  \
+         Learning (no task) - 30m\n\
          \n\
-         Personal — 2h 10m\n  \
-         Family — 1h 30m\n  \
-         Social media — 40m"
+         Personal - 2h 10m\n  \
+         Family - 1h 30m\n  \
+         Social media - 40m"
     );
 }
 
@@ -365,7 +365,7 @@ fn an_empty_my_time_report_says_so() {
 
     assert_eq!(
         d.my_time_report(THURSDAY, &TimeZone::UTC),
-        "My time — Thu 22 Oct 2026\n\nNothing tracked for yourself this day."
+        "My time - Thu 22 Oct 2026\n\nNothing tracked for yourself this day."
     );
 }
 
@@ -383,7 +383,7 @@ fn a_task_finished_after_the_report_day_still_shows_as_open_that_day() {
 
     assert!(
         d.office_report(THURSDAY, &TimeZone::UTC)
-            .contains("⏳ API — 1h 00m")
+            .contains("⏳ API - 1h 00m")
     );
 }
 
@@ -406,7 +406,7 @@ fn lines_follow_the_session_kind_so_they_add_up_to_the_totals() {
     assert!(!office_text.contains("Moved task"), "{office_text}");
     assert!(
         d.my_time_report(THURSDAY, &TimeZone::UTC)
-            .contains("Learning — 0h 40m\n  ⏳ Moved task — 40m"),
+            .contains("Learning - 0h 40m\n  ⏳ Moved task - 40m"),
     );
 }
 
@@ -423,7 +423,7 @@ fn time_in_a_deleted_category_still_gets_a_line() {
 
     assert_eq!(
         d.my_time_report(THURSDAY, &TimeZone::UTC),
-        "My time — Thu 22 Oct 2026\n\nPersonal — 1h 00m\n  (deleted category) — 1h 00m"
+        "My time - Thu 22 Oct 2026\n\nPersonal - 1h 00m\n  (deleted category) - 1h 00m"
     );
 }
 
@@ -447,7 +447,7 @@ fn time_under_a_minute_is_left_out_instead_of_showing_zero() {
 
     assert_eq!(
         d.my_time_report(THURSDAY, &TimeZone::UTC),
-        "My time — Thu 22 Oct 2026\n\nNothing tracked for yourself this day."
+        "My time - Thu 22 Oct 2026\n\nNothing tracked for yourself this day."
     );
     let office_text = d.office_report(THURSDAY, &TimeZone::UTC);
     assert!(!office_text.contains("Quick look"), "{office_text}");
@@ -480,12 +480,12 @@ fn a_third_level_is_indented_and_counted_in_every_total_above() {
 
     assert_eq!(
         d.office_report(THURSDAY, &TimeZone::UTC),
-        "Office report — Thu 22 Oct 2026 — 0h 50m (target 8h)\n\
+        "Office report - Thu 22 Oct 2026 - 0h 50m (target 8h)\n\
          \n\
-         Checkout — 50m\n  \
-         API — 50m\n    \
-         ✅ Auth header — 30m\n\
-         Meetings — none\n\
-         Overtime — none"
+         Checkout - 50m\n  \
+         API - 50m\n    \
+         ✅ Auth header - 30m\n\
+         Meetings - none\n\
+         Overtime - none"
     );
 }

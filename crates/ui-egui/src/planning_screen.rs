@@ -213,7 +213,7 @@ impl PlanningScreen {
                 }
             }
             time_field(ui, &mut draft.start_min, "Start");
-            ui.label("–");
+            ui.label("-");
             time_field(ui, &mut draft.end_min, "End");
             ui.add(
                 TextEdit::singleline(&mut draft.label)
@@ -371,7 +371,7 @@ fn progress_bar(ui: &mut Ui, share: f32, color: egui::Color32) {
 fn category_picker(ui: &mut Ui, id_salt: &str, cats: &[Category], selected: &mut Id) {
     let current = cats.iter().find(|c| c.meta.id == *selected);
     let text = current.map_or_else(
-        || RichText::new("—"),
+        || RichText::new("-"),
         |c| RichText::new(&c.name).color(color32(c.color)),
     );
     ComboBox::from_id_salt(id_salt)

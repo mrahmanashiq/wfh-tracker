@@ -59,7 +59,7 @@ fn an_added_block_is_listed_with_its_days_and_times() {
     h.run();
 
     h.get_by_label("Rust study");
-    h.get_by_label("Sun Mon Tue Wed Thu · 21:00–22:00");
+    h.get_by_label("Sun Mon Tue Wed Thu · 21:00-22:00");
     assert_eq!(h.state().store.blocks().unwrap().len(), 1);
 }
 

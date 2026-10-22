@@ -88,11 +88,11 @@ fn copy_office_report_puts_the_report_on_the_clipboard() {
 
     assert_eq!(
         copied(&h),
-        "Office report — Thu 22 Oct 2026 — 1h 00m (target 8h)\n\
+        "Office report - Thu 22 Oct 2026 - 1h 00m (target 8h)\n\
          \n\
-         ⏳ Checkout — 1h 00m\n\
-         Meetings — none\n\
-         Overtime — none"
+         ⏳ Checkout - 1h 00m\n\
+         Meetings - none\n\
+         Overtime - none"
     );
     h.get_by_label("Copied");
 }
@@ -106,7 +106,7 @@ fn copy_my_time_puts_the_private_report_on_the_clipboard() {
 
     assert_eq!(
         copied(&h),
-        "My time — Thu 22 Oct 2026\n\nPersonal — 0h 20m\n  Family — 20m"
+        "My time - Thu 22 Oct 2026\n\nPersonal - 0h 20m\n  Family - 20m"
     );
 }
 
@@ -121,9 +121,9 @@ fn the_previous_day_button_shows_yesterdays_reports() {
 
     assert_eq!(
         copied(&h),
-        "Office report — Wed 21 Oct 2026 — 0h 00m (target 8h)\n\
+        "Office report - Wed 21 Oct 2026 - 0h 00m (target 8h)\n\
          \n\
-         Meetings — none\n\
-         Overtime — none"
+         Meetings - none\n\
+         Overtime - none"
     );
 }

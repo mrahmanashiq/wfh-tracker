@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let api = store.add("Stripe API integration", Placement::Under(checkout.meta.id))?;
     store.add("Order summary emails", Placement::Under(checkout.meta.id))?;
     let review = store.add(
-        "Review PR #482 — rate limiter",
+        "Review PR #482 - rate limiter",
         Placement::TopLevel {
             category_id: office,
         },

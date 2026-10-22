@@ -44,7 +44,7 @@ pub const MAX_TITLE_CHARS: usize = 200;
 /// Levels of nesting: task → sub-task → sub-sub-task.
 pub const MAX_DEPTH: usize = 3;
 
-/// Trims a title and checks it is 1–200 characters.
+/// Trims a title and checks it is 1-200 characters.
 pub fn clean_title(raw: &str) -> Result<String, RepoError> {
     let title = raw.trim();
     match title.chars().count() {

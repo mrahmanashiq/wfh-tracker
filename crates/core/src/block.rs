@@ -113,10 +113,10 @@ impl Block {
         self.weekdays.contains(at.weekday()) && (self.start_min..self.end_min).contains(&minute)
     }
 
-    /// `21:00–22:00`
+    /// `21:00-22:00`
     pub fn times_text(&self) -> String {
         format!(
-            "{}–{}",
+            "{}-{}",
             clock_text(self.start_min),
             clock_text(self.end_min)
         )
