@@ -1,6 +1,7 @@
 //! `cargo xtask ci` — everything that must pass before a commit.
 
 mod layering;
+mod release;
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -9,8 +10,17 @@ fn main() -> ExitCode {
     match std::env::args().nth(1).as_deref() {
         Some("ci") => ci(),
         Some("layering") => report(check_layering()),
+        Some("icon") => report(
+            release::write_icon(&root())
+                .map(|p| println!("xtask: wrote {}", p.display()))
+                .map_err(|e| vec![e]),
+        ),
+        Some("release") => {
+            let publish = std::env::args().any(|a| a == "--publish");
+            report(release::release(&root(), publish).map_err(|e| vec![e]))
+        }
         _ => {
-            eprintln!("usage: cargo xtask <ci|layering>");
+            eprintln!("usage: cargo xtask <ci|layering|icon|release [--publish]>");
             ExitCode::FAILURE
         }
     }

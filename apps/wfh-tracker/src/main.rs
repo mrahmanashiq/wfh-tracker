@@ -10,11 +10,17 @@ use std::sync::Arc;
 use eframe::egui::{self, IconData, ViewportBuilder};
 use wt_core::{Autostart, CategoryRepo, SettingsRepo};
 use wt_platform::{
-    DesktopNotifier, LoginAutostart, MINIMIZED_FLAG, MeetingHotkey, SystemClock, Tray, TrayAction,
-    app_icon_rgba,
+    DesktopNotifier, LoginAutostart, MINIMIZED_FLAG, MeetingHotkey, ReleaseUpdater, SystemClock,
+    Tray, TrayAction, app_icon_rgba,
 };
 use wt_storage::SqliteStore;
 use wt_ui_egui::{Services, UiFonts, WfhApp};
+
+/// Where released versions are announced (a signed manifest on GitHub Releases).
+const UPDATE_MANIFEST: &str =
+    "https://github.com/mrahmanashiq/wfh-tracker/releases/latest/download/latest.json";
+/// Public half of the release signing key; downloads must match it.
+const UPDATE_PUBLIC_KEY: &str = include_str!("../../../packaging/updater.key.pub");
 
 fn main() -> Result<(), Box<dyn Error>> {
     let start_hidden = std::env::args().any(|a| a == MINIMIZED_FLAG);
@@ -35,7 +41,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("wfh-tracker: {e}");
     }
 
-    let (rgba, size) = app_icon_rgba();
+    let size = 64;
+    let rgba = app_icon_rgba(size);
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_title("WFH Tracker")
@@ -58,6 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 autostart: Box::new(autostart),
                 notifier: Box::new(DesktopNotifier),
                 fonts: segoe_ui(),
+                updater: release_updater(),
             };
             let (app, shell) = WfhApp::new(&cc.egui_ctx, store, services, start_hidden);
             // Tray and hotkey are created here, on the event-loop thread, as
@@ -78,6 +86,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         }),
     )?;
     Ok(())
+}
+
+/// The updater for installed (release) builds; development builds get none.
+fn release_updater() -> Option<Arc<dyn wt_core::Updater>> {
+    if cfg!(debug_assertions) {
+        return None;
+    }
+    ReleaseUpdater::new(
+        env!("CARGO_PKG_VERSION"),
+        UPDATE_MANIFEST,
+        UPDATE_PUBLIC_KEY,
+    )
+    .inspect_err(|e| eprintln!("wfh-tracker: {e}"))
+    .ok()
+    .map(|u| Arc::new(u) as Arc<dyn wt_core::Updater>)
 }
 
 /// Windows' own UI font, for a native feel.

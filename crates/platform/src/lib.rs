@@ -3,8 +3,10 @@
 
 mod autostart;
 mod hotkey;
+mod icon_art;
 mod notify;
 mod tray;
+mod updater;
 
 use std::path::PathBuf;
 
@@ -13,8 +15,10 @@ use wt_core::Clock;
 
 pub use autostart::LoginAutostart;
 pub use hotkey::MeetingHotkey;
+pub use icon_art::app_icon_rgba;
 pub use notify::DesktopNotifier;
-pub use tray::{Tray, TrayAction, app_icon_rgba};
+pub use tray::{Tray, TrayAction};
+pub use updater::ReleaseUpdater;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PlatformError {
@@ -30,6 +34,8 @@ pub enum PlatformError {
     Tray(String),
     #[error("meeting hotkey: {0}")]
     Hotkey(String),
+    #[error("updates: {0}")]
+    Update(String),
 }
 
 /// Command-line flag the autostart entry passes, so a login start stays in the tray.

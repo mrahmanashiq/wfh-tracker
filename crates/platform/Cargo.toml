@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 auto-launch.workspace = true
+cargo-packager-updater.workspace = true
 directories.workspace = true
 global-hotkey.workspace = true
 jiff.workspace = true

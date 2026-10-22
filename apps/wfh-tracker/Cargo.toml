@@ -12,5 +12,23 @@ wt-platform.workspace = true
 wt-storage.workspace = true
 wt-ui-egui.workspace = true
 
+[build-dependencies]
+winresource.workspace = true
+
+[package.metadata.packager]
+product-name = "WFH Tracker"
+identifier = "com.mrahmanashiq.wfh-tracker"
+publisher = "mrahmanashiq"
+description = "Keeps the work-from-home day near 8 hours and protects your own time."
+homepage = "https://github.com/mrahmanashiq/wfh-tracker"
+before-packaging-command = "cargo build --release -p wfh-tracker"
+icons = ["../../packaging/icon.ico"]
+binaries = [{ path = "wfh-tracker", main = true }]
+
+[package.metadata.packager.nsis]
+# Per-user install: no admin prompt, and updates can replace files in place.
+installer-mode = "currentUser"
+installer-icon = "../../packaging/icon.ico"
+
 [lints]
 workspace = true

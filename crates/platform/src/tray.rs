@@ -62,31 +62,8 @@ impl Tray {
     }
 }
 
-/// A 32×32 blue disc with a white clock hand, drawn in code so the app ships no image files.
-pub fn app_icon_rgba() -> (Vec<u8>, u32) {
-    const SIZE: u32 = 32;
-    let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
-    let c = (SIZE as f32 - 1.0) / 2.0;
-    for y in 0..SIZE {
-        for x in 0..SIZE {
-            let (dx, dy) = (x as f32 - c, y as f32 - c);
-            let r = (dx * dx + dy * dy).sqrt();
-            let hand = (dx.abs() < 1.5 && dy < 0.5 && dy > -c * 0.7)
-                || (dy.abs() < 1.5 && dx > -0.5 && dx < c * 0.5);
-            let px = match () {
-                _ if r > c + 0.5 => [0, 0, 0, 0],
-                _ if hand => [255, 255, 255, 255],
-                _ => [0x3b, 0x82, 0xf6, 255],
-            };
-            rgba.extend_from_slice(&px);
-        }
-    }
-    (rgba, SIZE)
-}
-
 fn app_icon() -> Result<Icon, PlatformError> {
-    let (rgba, size) = app_icon_rgba();
-    Icon::from_rgba(rgba, size, size).map_err(tray_error)
+    Icon::from_rgba(crate::icon_art::app_icon_rgba(32), 32, 32).map_err(tray_error)
 }
 
 fn tray_error(e: impl std::fmt::Display) -> PlatformError {

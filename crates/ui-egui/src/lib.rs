@@ -6,6 +6,7 @@ mod settings_screen;
 mod status_bar;
 mod tasks_screen;
 mod theme;
+mod updates;
 mod widgets;
 
 use std::sync::Arc;
@@ -23,6 +24,7 @@ pub use settings_screen::SettingsScreen;
 pub use status_bar::StatusBar;
 pub use tasks_screen::TasksScreen;
 pub use theme::UiFonts;
+pub use updates::UpdateController;
 
 /// How often reminders and the heartbeat are checked, shown or hidden.
 const TICK_EVERY: Duration = Duration::from_secs(15);
@@ -80,6 +82,7 @@ pub struct WfhApp<S> {
     tasks: TasksScreen,
     categories: CategoriesScreen,
     settings: SettingsScreen,
+    updates: UpdateController,
     quitting: Arc<AtomicBool>,
     start: Start,
 }
@@ -107,6 +110,8 @@ pub struct Services {
     pub notifier: Box<dyn Notifier>,
     /// Fonts to use instead of egui's built-in one, e.g. Segoe UI.
     pub fonts: Option<UiFonts>,
+    /// `None` in development builds.
+    pub updater: Option<Arc<dyn wt_core::Updater>>,
 }
 
 impl<S: Store> WfhApp<S> {
@@ -137,6 +142,7 @@ impl<S: Store> WfhApp<S> {
             tasks: TasksScreen::default(),
             categories: CategoriesScreen::default(),
             settings,
+            updates: UpdateController::new(services.updater),
             quitting,
             start: if start_hidden {
                 Start::HideAfterFirstFrame
@@ -169,6 +175,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
                 self.notifier.as_ref(),
             );
         }
+        self.updates.tick(ctx);
         ctx.request_repaint_after(TICK_EVERY);
     }
 
@@ -209,6 +216,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
             .show(ui, |ui| {
                 self.status
                     .ui(ui, &self.store, &settings, self.clock.as_ref());
+                self.updates.header_ui(ui);
             });
         egui::CentralPanel::default()
             .frame(
@@ -219,7 +227,10 @@ impl<S: Store> eframe::App for WfhApp<S> {
             .show(ui, |ui| match self.screen {
                 Screen::Tasks => self.tasks.ui(ui, &self.store, self.clock.as_ref()),
                 Screen::Categories => self.categories.ui(ui, &self.store),
-                Screen::Settings => self.settings.ui(ui, &self.store, self.autostart.as_ref()),
+                Screen::Settings => {
+                    self.settings.ui(ui, &self.store, self.autostart.as_ref());
+                    self.updates.settings_ui(ui);
+                }
             });
     }
 }

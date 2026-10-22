@@ -14,6 +14,7 @@ pub mod repo;
 pub mod session;
 pub mod settings;
 pub mod task;
+pub mod updates;
 
 pub use autostart::{Autostart, AutostartError};
 pub use category::{Category, CategoryKind, NewCategory, ParseError, Rgb};
@@ -27,3 +28,4 @@ pub use session::{
 };
 pub use settings::{Settings, SettingsError};
 pub use task::{Placement, Task, TaskTree, today_view};
+pub use updates::{AvailableUpdate, UpdateError, Updater};
