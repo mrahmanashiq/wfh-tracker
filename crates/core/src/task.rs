@@ -14,6 +14,8 @@ pub struct Task {
     pub category_id: Id,
     /// When it was ticked; `None` while open.
     pub done_at: Option<Timestamp>,
+    /// This task's own break reminder interval. Sub-tasks use their parent's.
+    pub break_interval_min: Option<u32>,
 }
 
 impl Task {

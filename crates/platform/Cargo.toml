@@ -8,7 +8,9 @@ license.workspace = true
 [dependencies]
 auto-launch.workspace = true
 directories.workspace = true
+global-hotkey.workspace = true
 jiff.workspace = true
+notify-rust.workspace = true
 thiserror.workspace = true
 tray-icon.workspace = true
 wt-core.workspace = true

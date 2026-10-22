@@ -4,8 +4,7 @@ use wt_core::{Id, Meta, RepoError, Task, TaskRepo};
 
 use crate::{SqliteStore, backend, parse_id, parse_ts, require_changed};
 
-const COLUMNS: &str =
-    "id, parent_id, title, category_id, done_at, created_at, updated_at, deleted_at";
+const COLUMNS: &str = "id, parent_id, title, category_id, done_at, created_at, updated_at, deleted_at, break_interval_min";
 
 /// Raw row, read inside the rusqlite closure and validated outside it.
 struct TaskRow {
@@ -17,6 +16,7 @@ struct TaskRow {
     created_at: String,
     updated_at: String,
     deleted_at: Option<String>,
+    break_interval_min: Option<u32>,
 }
 
 impl TaskRow {
@@ -30,6 +30,7 @@ impl TaskRow {
             created_at: row.get(5)?,
             updated_at: row.get(6)?,
             deleted_at: row.get(7)?,
+            break_interval_min: row.get(8)?,
         })
     }
 
@@ -45,6 +46,7 @@ impl TaskRow {
             title: self.title,
             category_id: parse_id(&self.category_id)?,
             done_at: self.done_at.as_deref().map(parse_ts).transpose()?,
+            break_interval_min: self.break_interval_min,
         })
     }
 }
@@ -138,6 +140,18 @@ impl TaskRepo for SqliteStore {
                      updated_at = ?3
                  WHERE id = ?1 AND deleted_at IS NULL",
                 params![id.to_string(), done, self.now()],
+            )
+            .map_err(backend)?;
+        require_changed(id, changed)
+    }
+
+    fn write_break_interval(&self, id: Id, minutes: Option<u32>) -> RepoResult<()> {
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE task SET break_interval_min = ?2, updated_at = ?3
+                 WHERE id = ?1 AND deleted_at IS NULL",
+                params![id.to_string(), minutes, self.now()],
             )
             .map_err(backend)?;
         require_changed(id, changed)

@@ -26,6 +26,7 @@ fn task(title: &str, parent: Option<&Task>, done_at: Option<&str>) -> Task {
         title: title.to_owned(),
         category_id: Id::new(),
         done_at: done_at.map(ts),
+        break_interval_min: None,
     }
 }
 

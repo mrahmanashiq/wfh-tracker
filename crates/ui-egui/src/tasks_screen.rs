@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
-use egui::{ComboBox, RichText, TextEdit, Ui};
+use egui::{ComboBox, DragValue, RichText, TextEdit, Ui};
 use wt_core::repo::RepoResult;
-use wt_core::{Category, CategoryRepo, Clock, Id, Placement, Task, TaskRepo, today_view};
+use wt_core::{
+    Category, CategoryRepo, Clock, Id, Placement, SessionRepo, Task, TaskRepo, TimerTarget,
+    today_view,
+};
 
 use crate::widgets::{DeleteClick, color_dot, delete_buttons, message};
 
@@ -13,10 +16,20 @@ pub struct TasksScreen {
     new_category: Option<Id>,
     /// Top-level task whose "add sub-task" field is open, with its text.
     adding_under: Option<(Id, String)>,
-    /// Task being renamed, with the edited title and (top-level only) category.
-    renaming: Option<(Id, String, Option<Id>)>,
+    renaming: Option<EditDraft>,
     confirm_delete: Option<Id>,
     message: Option<String>,
+    /// The task whose timer is running, refreshed every frame.
+    running_task: Option<Id>,
+}
+
+/// A task being edited. Category and break interval apply to top-level tasks only.
+struct EditDraft {
+    id: Id,
+    title: String,
+    category: Option<Id>,
+    break_interval: Option<u32>,
+    top_level: bool,
 }
 
 /// What the user asked for this frame; applied after drawing.
@@ -25,21 +38,20 @@ enum Action {
     AddSubtask,
     Toggle(Id, bool),
     OpenSubtask(Id),
-    OpenRename(Id, String, Option<Id>),
+    OpenRename(EditDraft),
     Rename,
+    Start(Id),
+    Stop,
     Delete(Id),
     ArmDelete(Option<Id>),
     Close,
 }
 
 impl TasksScreen {
-    pub fn ui(
-        &mut self,
-        ui: &mut Ui,
-        tasks: &dyn TaskRepo,
-        categories: &dyn CategoryRepo,
-        clock: &dyn Clock,
-    ) {
+    pub fn ui(&mut self, ui: &mut Ui, store: &dyn SessionRepo, clock: &dyn Clock) {
+        let tasks: &dyn TaskRepo = store;
+        let categories: &dyn CategoryRepo = store;
+        self.running_task = store.running().ok().flatten().and_then(|s| s.task_id);
         ui.heading("Tasks");
         ui.add_space(8.0);
 
@@ -90,7 +102,7 @@ impl TasksScreen {
         });
 
         if let Some(action) = action {
-            self.apply(action, tasks);
+            self.apply(action, store);
         }
     }
 
@@ -110,11 +122,20 @@ impl TasksScreen {
                 color_dot(ui, cat.color);
             }
 
-            if let Some((_, title, category)) = self.renaming.as_mut().filter(|r| r.0 == id) {
-                ui.add(TextEdit::singleline(title).desired_width(220.0))
+            if let Some(draft) = self.renaming.as_mut().filter(|d| d.id == id) {
+                ui.add(TextEdit::singleline(&mut draft.title).desired_width(200.0))
                     .accessible_name("Task title");
-                if top_level {
-                    category_picker(ui, ("rename_category", id), cats, category);
+                if draft.top_level {
+                    category_picker(ui, ("rename_category", id), cats, &mut draft.category);
+                    let mut own = draft.break_interval.is_some();
+                    if ui.checkbox(&mut own, "Own break every").changed() {
+                        draft.break_interval =
+                            own.then_some(wt_core::Settings::default().break_interval_min);
+                    }
+                    if let Some(minutes) = draft.break_interval.as_mut() {
+                        ui.add(DragValue::new(minutes).range(1..=180).suffix(" min"))
+                            .accessible_name("Break every (min)");
+                    }
                 }
                 if ui.button("Save").clicked() {
                     *action = Some(Action::Rename);
@@ -125,8 +146,10 @@ impl TasksScreen {
                 return;
             }
 
+            let running = self.running_task == Some(id);
             let mut done = task.is_done();
             let title = RichText::new(&task.title);
+            let title = if running { title.strong() } else { title };
             let title = if done {
                 title.strikethrough().weak()
             } else {
@@ -150,11 +173,23 @@ impl TasksScreen {
                     None => {}
                 }
                 if ui.button("Rename").clicked() {
-                    let category = top_level.then_some(task.category_id);
-                    *action = Some(Action::OpenRename(id, task.title.clone(), category));
+                    *action = Some(Action::OpenRename(EditDraft {
+                        id,
+                        title: task.title.clone(),
+                        category: top_level.then_some(task.category_id),
+                        break_interval: task.break_interval_min,
+                        top_level,
+                    }));
                 }
                 if top_level && ui.button("Add sub-task").clicked() {
                     *action = Some(Action::OpenSubtask(id));
+                }
+                if running {
+                    if ui.button("Stop").clicked() {
+                        *action = Some(Action::Stop);
+                    }
+                } else if ui.button("Start").clicked() {
+                    *action = Some(Action::Start(id));
                 }
             });
         });
@@ -178,7 +213,8 @@ impl TasksScreen {
         });
     }
 
-    fn apply(&mut self, action: Action, tasks: &dyn TaskRepo) {
+    fn apply(&mut self, action: Action, store: &dyn SessionRepo) {
+        let tasks: &dyn TaskRepo = store;
         let result: RepoResult<()> = match action {
             Action::Add => match self.new_category {
                 Some(category_id) => tasks
@@ -198,21 +234,16 @@ impl TasksScreen {
                 self.adding_under = Some((id, String::new()));
                 Ok(())
             }
-            Action::OpenRename(id, title, category) => {
-                self.renaming = Some((id, title, category));
+            Action::OpenRename(draft) => {
+                self.renaming = Some(draft);
                 Ok(())
             }
             Action::Rename => match self.renaming.take() {
-                Some((id, title, category)) => {
-                    tasks.rename(id, &title).and_then(|()| match category {
-                        Some(category_id) if tasks.get(id)?.category_id != category_id => {
-                            tasks.set_category(id, category_id)
-                        }
-                        _ => Ok(()),
-                    })
-                }
+                Some(draft) => save_edit(tasks, &draft),
                 None => Ok(()),
             },
+            Action::Start(id) => store.start(TimerTarget::Task(id)).map(|_| ()),
+            Action::Stop => store.stop().map(|_| ()),
             Action::Delete(id) => {
                 self.confirm_delete = None;
                 tasks.delete(id)
@@ -229,6 +260,24 @@ impl TasksScreen {
         };
         self.message = result.err().map(|e| e.to_string());
     }
+}
+
+/// Writes only what changed, so a plain rename doesn't touch category or interval.
+fn save_edit(tasks: &dyn TaskRepo, draft: &EditDraft) -> RepoResult<()> {
+    tasks.rename(draft.id, &draft.title)?;
+    if !draft.top_level {
+        return Ok(());
+    }
+    let current = tasks.get(draft.id)?;
+    if let Some(category_id) = draft.category
+        && category_id != current.category_id
+    {
+        tasks.set_category(draft.id, category_id)?;
+    }
+    if draft.break_interval != current.break_interval_min {
+        tasks.set_break_interval(draft.id, draft.break_interval)?;
+    }
+    Ok(())
 }
 
 /// A category drop-down; `selected` falls back to nothing if the list is empty.

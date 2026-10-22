@@ -63,6 +63,13 @@ Session table: `id, task_id NULL → task, category_id → category, kind, start
 6. On Friday, 3h of office work gives no 8h notice and `Overtime { minutes: 180 }`.
 7. `cargo xtask ci` passes. A manual check confirms that a real Windows toast appears and the hotkey works while the window is hidden.
 
+## As built (2026-10-22)
+
+- A session's kind reuses `CategoryKind`, so there's no separate `SessionKind`. Office time is `office_time(sessions, day, tz, now) -> SignedDuration`. It takes `now` because a running session counts up to now.
+- A task's own break interval is edited in its Rename form (top-level tasks only). Sub-tasks use their parent's interval.
+- A unique index in SQLite also enforces "at most one running session".
+- Toasts carry text only. The Resume button lives in the status bar.
+
 ## Decisions (2026-10-22)
 
 - **Forgotten timer:** it's auto-stopped at the last heartbeat, which covers both an app closed with a timer running and a PC that slept. A banner explains the stop.

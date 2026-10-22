@@ -17,9 +17,11 @@ wt-ui-egui = { path = "crates/ui-egui" }
 auto-launch = "0.6"
 directories = "6.0"
 eframe = "0.37"
+global-hotkey = "0.9"
 egui = "0.37"
 egui_kittest = "0.37"
 jiff = "0.2"
+notify-rust = "4.18"
 rusqlite = { version = "0.40", features = ["bundled"] }
 rusqlite_migration = "2.6"
 thiserror = "2.0"

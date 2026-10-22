@@ -2,6 +2,8 @@
 //! so it is kept thin and checked by hand; the rules it serves live in `wt-core`.
 
 mod autostart;
+mod hotkey;
+mod notify;
 mod tray;
 
 use std::path::PathBuf;
@@ -10,6 +12,8 @@ use jiff::Timestamp;
 use wt_core::Clock;
 
 pub use autostart::LoginAutostart;
+pub use hotkey::MeetingHotkey;
+pub use notify::DesktopNotifier;
 pub use tray::{Tray, TrayAction, app_icon_rgba};
 
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +28,8 @@ pub enum PlatformError {
     Autostart(String),
     #[error("tray icon: {0}")]
     Tray(String),
+    #[error("meeting hotkey: {0}")]
+    Hotkey(String),
 }
 
 /// Command-line flag the autostart entry passes, so a login start stays in the tray.

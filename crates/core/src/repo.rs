@@ -4,7 +4,12 @@
 use jiff::Timestamp;
 
 use crate::task::clean_title;
-use crate::{Category, Id, NewCategory, Placement, Rgb, Settings, SettingsError, Task};
+use jiff::SignedDuration;
+
+use crate::{
+    Category, CategoryKind, Id, MeetingToggle, NewCategory, Placement, Rgb, Session, Settings,
+    SettingsError, Switch, Task, TimerTarget,
+};
 
 /// Columns every record carries so a future sync can merge and propagate deletes.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,6 +73,7 @@ pub trait TaskRepo {
     fn write_category(&self, id: Id, category_id: Id) -> RepoResult<()>;
     /// Ticking keeps an existing `done_at`; unticking clears it.
     fn write_done(&self, id: Id, done: bool) -> RepoResult<()>;
+    fn write_break_interval(&self, id: Id, minutes: Option<u32>) -> RepoResult<()>;
     /// Soft-deletes a task and its sub-tasks.
     fn remove(&self, id: Id) -> RepoResult<()>;
 
@@ -105,6 +111,31 @@ pub trait TaskRepo {
         self.write_category(id, category_id)
     }
 
+    /// Sets a top-level task's own break interval (`None` = use the global one).
+    fn set_break_interval(&self, id: Id, minutes: Option<u32>) -> RepoResult<()> {
+        if self.get(id)?.parent_id.is_some() {
+            return Err(RepoError::Invalid(
+                "a sub-task uses its parent's break interval",
+            ));
+        }
+        if minutes == Some(0) {
+            return Err(RepoError::Invalid(
+                "a break interval must be at least 1 minute",
+            ));
+        }
+        self.write_break_interval(id, minutes)
+    }
+
+    /// The break interval a running task uses: its own, else its parent's.
+    fn break_interval_for(&self, id: Id) -> RepoResult<Option<u32>> {
+        let task = self.get(id)?;
+        match (task.break_interval_min, task.parent_id) {
+            (Some(own), _) => Ok(Some(own)),
+            (None, Some(parent)) => Ok(self.get(parent)?.break_interval_min),
+            (None, None) => Ok(None),
+        }
+    }
+
     /// Ticks or unticks a task. Ticking a parent's last open sub-task ticks
     /// the parent; unticking a sub-task reopens it. Ticking a parent by hand
     /// leaves its sub-tasks alone.
@@ -139,4 +170,97 @@ pub trait TaskRepo {
         }
         Ok(())
     }
+}
+
+/// Tracked time. Backends implement the primitives; the provided methods hold
+/// the rules (one running session, meetings, breaks, heartbeat recovery).
+pub trait SessionRepo: TaskRepo + CategoryRepo {
+    /// The running session, if any.
+    fn running(&self) -> RepoResult<Option<Session>>;
+    /// Live sessions still running or ended after `since`, oldest first.
+    fn sessions_since(&self, since: jiff::Timestamp) -> RepoResult<Vec<Session>>;
+    /// In one transaction: ends the running session now and starts a new one.
+    fn switch_to(
+        &self,
+        task_id: Option<Id>,
+        category_id: Id,
+        kind: CategoryKind,
+    ) -> RepoResult<Switch>;
+    /// Ends the running session at `at` (default now); returns it.
+    fn end_running(&self, at: Option<jiff::Timestamp>) -> RepoResult<Option<Session>>;
+    /// Records that the app is alive now.
+    fn beat(&self) -> RepoResult<()>;
+    fn last_heartbeat(&self) -> RepoResult<Option<jiff::Timestamp>>;
+
+    /// Starts a timer on a task (with its category) or a bare category.
+    fn start(&self, target: TimerTarget) -> RepoResult<Session> {
+        let (task_id, category_id) = match target {
+            TimerTarget::Task(id) => (Some(id), self.get(id)?.category_id),
+            TimerTarget::Category(id) => (None, id),
+        };
+        let kind = category(self, category_id)?.kind;
+        Ok(self.switch_to(task_id, category_id, kind)?.started)
+    }
+
+    fn stop(&self) -> RepoResult<Option<Session>> {
+        self.end_running(None)
+    }
+
+    /// Ends work and starts a break session.
+    fn take_break(&self) -> RepoResult<Switch> {
+        let category = first_of_kind(self, CategoryKind::Break)?;
+        self.switch_to(None, category.meta.id, CategoryKind::Break)
+    }
+
+    /// Starts a meeting (pausing whatever ran) or ends the running one.
+    fn toggle_meeting(&self) -> RepoResult<MeetingToggle> {
+        if let Some(meeting) = self.running()?.filter(Session::is_meeting) {
+            let ended = self.end_running(None)?;
+            return Ok(MeetingToggle::Ended {
+                meeting: ended.unwrap_or(meeting),
+            });
+        }
+        let category = first_of_kind(self, CategoryKind::Meeting)?;
+        let switch = self.switch_to(None, category.meta.id, CategoryKind::Meeting)?;
+        Ok(MeetingToggle::Started {
+            paused: switch.ended,
+        })
+    }
+
+    /// If the app was gone longer than `max_gap` (closed, or the PC slept)
+    /// while a timer ran, ends that timer at the last heartbeat and returns
+    /// it. Always records a fresh heartbeat.
+    fn recover(
+        &self,
+        now: jiff::Timestamp,
+        max_gap: SignedDuration,
+    ) -> RepoResult<Option<Session>> {
+        let stopped = match (self.running()?, self.last_heartbeat()?) {
+            (Some(running), Some(beat)) if now.duration_since(beat) > max_gap => {
+                self.end_running(Some(beat.max(running.started_at)))?
+            }
+            _ => None,
+        };
+        self.beat()?;
+        Ok(stopped)
+    }
+}
+
+fn category(repo: &(impl CategoryRepo + ?Sized), id: Id) -> RepoResult<Category> {
+    repo.list()?
+        .into_iter()
+        .find(|c| c.meta.id == id)
+        .ok_or(RepoError::NotFound(id))
+}
+
+fn first_of_kind(repo: &(impl CategoryRepo + ?Sized), kind: CategoryKind) -> RepoResult<Category> {
+    let missing = match kind {
+        CategoryKind::Meeting => "add a category of kind Meeting first",
+        CategoryKind::Break => "add a category of kind Break first",
+        _ => "add a category of that kind first",
+    };
+    repo.list()?
+        .into_iter()
+        .find(|c| c.kind == kind)
+        .ok_or(RepoError::Invalid(missing))
 }

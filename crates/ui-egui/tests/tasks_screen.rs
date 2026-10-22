@@ -5,7 +5,7 @@ use std::sync::Arc;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use jiff::Timestamp;
-use wt_core::{CategoryRepo, FixedClock, TaskRepo};
+use wt_core::{CategoryRepo, FixedClock, SessionRepo, TaskRepo};
 use wt_storage::SqliteStore;
 use wt_ui_egui::TasksScreen;
 
@@ -22,7 +22,7 @@ fn harness() -> Harness<'static, State> {
     let store = SqliteStore::open_in_memory(clock.clone()).unwrap();
     store.seed_defaults().unwrap();
     Harness::new_ui_state(
-        |ui, s: &mut State| s.screen.ui(ui, &s.store, &s.store, s.clock.as_ref()),
+        |ui, s: &mut State| s.screen.ui(ui, &s.store, s.clock.as_ref()),
         State {
             store,
             clock,
@@ -108,4 +108,27 @@ fn a_blank_title_is_refused_with_a_message() {
 
     h.get_by_label("a task needs a title");
     assert!(h.state().store.list_live().unwrap().is_empty());
+}
+
+#[test]
+fn start_and_stop_run_a_timer_on_a_task() {
+    let mut h = checkout_with_two_subtasks();
+
+    // Rows in order: Checkout, Validation, API.
+    h.get_all_by_label("Start").nth(2).unwrap().click();
+    h.run();
+    let running = h.state().store.running().unwrap().unwrap();
+    let api = h
+        .state()
+        .store
+        .list_live()
+        .unwrap()
+        .into_iter()
+        .find(|t| t.title == "API")
+        .unwrap();
+    assert_eq!(running.task_id, Some(api.meta.id));
+
+    h.get_by_label("Stop").click();
+    h.run();
+    assert!(h.state().store.running().unwrap().is_none());
 }

@@ -1,6 +1,7 @@
 //! SQLite-backed repositories for WFH Tracker.
 
 mod category;
+mod session;
 mod settings;
 mod task;
 
@@ -16,6 +17,7 @@ fn migrations() -> Migrations<'static> {
     Migrations::new(vec![
         M::up(include_str!("migrations/001_foundation.sql")),
         M::up(include_str!("migrations/002_tasks.sql")),
+        M::up(include_str!("migrations/003_tracking.sql")),
     ])
 }
 
