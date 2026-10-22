@@ -426,3 +426,29 @@ fn time_in_a_deleted_category_still_gets_a_line() {
         "My time — Thu 22 Oct 2026\n\nPersonal — 1h 00m\n  (deleted category) — 1h 00m"
     );
 }
+
+#[test]
+fn time_under_a_minute_is_left_out_instead_of_showing_zero() {
+    let mut d = Day::new();
+    let (office, learning) = (d.office.clone(), d.learning.clone());
+    let quick = d.task("Quick look", &office, None, None);
+    d.session(
+        Some(quick),
+        &office,
+        "2026-10-22T03:00:00Z",
+        "2026-10-22T03:00:40Z",
+    );
+    d.session(
+        None,
+        &learning,
+        "2026-10-22T13:00:00Z",
+        "2026-10-22T13:00:30Z",
+    );
+
+    assert_eq!(
+        d.my_time_report(THURSDAY, &TimeZone::UTC),
+        "My time — Thu 22 Oct 2026\n\nNothing tracked for yourself this day."
+    );
+    let office_text = d.office_report(THURSDAY, &TimeZone::UTC);
+    assert!(!office_text.contains("Quick look"), "{office_text}");
+}

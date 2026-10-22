@@ -25,6 +25,18 @@ pub struct ReportInput<'a> {
     pub settings: &'a Settings,
 }
 
+/// Report text counts whole minutes: under a minute is left out rather
+/// than shown as `0m`. Seconds still add up across stretches.
+trait Shows {
+    fn shows(&self) -> bool;
+}
+
+impl Shows for SignedDuration {
+    fn shows(&self) -> bool {
+        self.as_mins() > 0
+    }
+}
+
 /// `50m`, or `2h 05m` from an hour on.
 pub fn duration_text(d: SignedDuration) -> String {
     let m = d.as_mins().max(0);
@@ -67,18 +79,18 @@ pub fn office_report(input: &ReportInput<'_>) -> String {
     lines.extend(day.task_lines(input, |kind| kind == CategoryKind::Office));
 
     let deleted = day.deleted_time(CategoryKind::Office);
-    if deleted.is_positive() {
+    if deleted.shows() {
         lines.push(format!("(deleted task) — {}", duration_text(deleted)));
     }
     let untasked = day.untasked_time(|s| s.kind == CategoryKind::Office);
-    if untasked.is_positive() {
+    if untasked.shows() {
         lines.push(format!("Other office work — {}", duration_text(untasked)));
     }
 
     let meetings: Vec<SignedDuration> = day
         .sessions
         .iter()
-        .filter(|(s, _)| s.is_meeting())
+        .filter(|(s, t)| s.is_meeting() && t.shows())
         .map(|(_, t)| *t)
         .collect();
     lines.push(match meetings.len() {
@@ -116,7 +128,7 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
         .filter(|c| c.kind == CategoryKind::Learning)
     {
         let time = day.untasked_time(|s| s.category_id == category.meta.id);
-        if time.is_positive() {
+        if time.shows() {
             learning.push(format!(
                 "{} (no task) — {}",
                 category.name,
@@ -125,11 +137,11 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
         }
     }
     let deleted = day.deleted_time(CategoryKind::Learning);
-    if deleted.is_positive() {
+    if deleted.shows() {
         learning.push(format!("(deleted task) — {}", duration_text(deleted)));
     }
     let learning_total = day.kind_time(|k| k == CategoryKind::Learning);
-    if learning_total.is_positive() {
+    if learning_total.shows() {
         sections.push(section("Learning", learning_total, learning));
     }
 
@@ -139,7 +151,7 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
         .filter(|c| is_personal(c.kind))
         .filter_map(|c| {
             let time = day.time_where(|s| s.category_id == c.meta.id);
-            time.is_positive()
+            time.shows()
                 .then(|| format!("{} — {}", c.name, duration_text(time)))
         })
         .collect();
@@ -152,10 +164,10 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
     let unlisted = personal_total
         .checked_sub(listed)
         .unwrap_or(SignedDuration::ZERO);
-    if unlisted.is_positive() {
+    if unlisted.shows() {
         personal.push(format!("(deleted category) — {}", duration_text(unlisted)));
     }
-    if personal_total.is_positive() {
+    if personal_total.shows() {
         sections.push(section("Personal", personal_total, personal));
     }
 
@@ -260,7 +272,7 @@ impl<'a> Day<'a> {
     /// Worked on in sessions of these kinds that day, or ticked that day while
     /// in a category of these kinds.
     fn relevant(&self, task: &Task, kind: &dyn Fn(CategoryKind) -> bool) -> bool {
-        self.task_time(task.meta.id, kind).is_positive()
+        self.task_time(task.meta.id, kind).shows()
             || (task
                 .done_at
                 .is_some_and(|at| self.local_date(at) == self.day)
@@ -326,7 +338,7 @@ impl<'a> Day<'a> {
 
 /// `text — 50m`, or just `text` when no time was tracked (e.g. ticked only).
 fn with_time(text: &str, time: SignedDuration) -> String {
-    if time.is_positive() {
+    if time.shows() {
         format!("{text} — {}", duration_text(time))
     } else {
         text.to_owned()
