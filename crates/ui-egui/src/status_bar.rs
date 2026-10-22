@@ -3,7 +3,7 @@ use jiff::{SignedDuration, Timestamp};
 use wt_core::repo::RepoResult;
 use wt_core::{
     CategoryKind, Clock, MeetingToggle, Notice, Notifier, OfficeStatus, Reminders, Session,
-    SessionRepo, Settings, Tick, TimerTarget, office_status, office_time,
+    SessionRepo, Settings, Tick, TimerTarget, office_status, office_time, tracked_time,
 };
 
 use crate::theme::palette;
@@ -77,9 +77,15 @@ impl StatusBar {
                                     .strong(),
                             );
                             ui.label(
-                                RichText::new(clock_text(now.duration_since(session.started_at)))
-                                    .color(p.accent)
-                                    .monospace(),
+                                RichText::new(clock_text(tracked_time(
+                                    &sessions,
+                                    TimerTarget::resuming(session),
+                                    clock.today(),
+                                    &clock.time_zone(),
+                                    now,
+                                )))
+                                .color(p.accent)
+                                .monospace(),
                             );
                             if icon_button(ui, Icon::Stop, "Stop", p.accent).clicked() {
                                 action = Some(Action::Stop);
@@ -245,10 +251,10 @@ impl StatusBar {
     fn apply(&mut self, action: Action, store: &dyn SessionRepo) {
         let result: RepoResult<()> = match action {
             Action::Stop => store.stop().map(|_| ()),
-            Action::ToggleMeeting => store.toggle_meeting().map(|toggle| {
-                if let MeetingToggle::Started { paused } = toggle {
-                    self.offer_resume(store, paused.as_ref());
-                }
+            Action::ToggleMeeting => store.toggle_meeting().map(|toggle| match toggle {
+                MeetingToggle::Started { paused } => self.offer_resume(store, paused.as_ref()),
+                // The interrupted work restarted by itself; nothing left to offer.
+                MeetingToggle::Ended { .. } => self.resume = None,
             }),
             Action::TakeBreak => store
                 .take_break()

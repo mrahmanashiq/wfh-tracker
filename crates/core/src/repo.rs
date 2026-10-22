@@ -213,18 +213,40 @@ pub trait SessionRepo: TaskRepo + CategoryRepo {
     }
 
     /// Starts a meeting (pausing whatever ran) or ends the running one.
+    /// Ending a meeting restarts the work it interrupted, at the same instant.
     fn toggle_meeting(&self) -> RepoResult<MeetingToggle> {
         if let Some(meeting) = self.running()?.filter(Session::is_meeting) {
-            let ended = self.end_running(None)?;
-            return Ok(MeetingToggle::Ended {
-                meeting: ended.unwrap_or(meeting),
-            });
+            let paused = self.paused_by(&meeting)?;
+            let meeting = self.end_running(None)?.unwrap_or(meeting);
+            let resumed = match paused {
+                Some(work) => match self.start(TimerTarget::resuming(&work)) {
+                    Ok(session) => Some(session),
+                    // The task was deleted during the meeting: nothing to restart.
+                    Err(RepoError::NotFound(_)) => None,
+                    Err(e) => return Err(e),
+                },
+                None => None,
+            };
+            return Ok(MeetingToggle::Ended { meeting, resumed });
         }
         let category = first_of_kind(self, CategoryKind::Meeting)?;
         let switch = self.switch_to(None, category.meta.id, CategoryKind::Meeting)?;
         Ok(MeetingToggle::Started {
             paused: switch.ended,
         })
+    }
+
+    /// The work session `meeting` interrupted: the one that ended at the very
+    /// instant the meeting started. Stored data, so it survives a restart.
+    fn paused_by(&self, meeting: &Session) -> RepoResult<Option<Session>> {
+        let just_before = meeting
+            .started_at
+            .checked_sub(SignedDuration::from_millis(1))
+            .unwrap_or(meeting.started_at);
+        Ok(self
+            .sessions_since(just_before)?
+            .into_iter()
+            .find(|s| s.ended_at == Some(meeting.started_at) && !s.is_break() && !s.is_meeting()))
     }
 
     /// If the app was gone longer than `max_gap` (closed, or the PC slept)

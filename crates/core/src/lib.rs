@@ -25,6 +25,7 @@ pub use reminders::{Notice, Reminders, Tick};
 pub use repo::{CategoryRepo, Meta, RepoError, SessionRepo, SettingsRepo, TaskRepo};
 pub use session::{
     MeetingToggle, OfficeStatus, Session, Switch, TimerTarget, office_status, office_time,
+    tracked_time,
 };
 pub use settings::{Settings, SettingsError};
 pub use task::{Placement, Task, TaskTree, today_view};

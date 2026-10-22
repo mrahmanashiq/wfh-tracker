@@ -145,3 +145,23 @@ fn start_and_stop_run_a_timer_on_a_task() {
     h.run();
     assert!(h.state().store.running().unwrap().is_none());
 }
+
+#[test]
+fn each_row_shows_todays_time_and_a_parent_includes_its_subtasks() {
+    let mut h = checkout_with_two_subtasks();
+    let tasks = h.state().store.list_live().unwrap();
+    let id = |title: &str| tasks.iter().find(|t| t.title == title).unwrap().meta.id;
+    let store = &h.state().store;
+    store
+        .start(wt_core::TimerTarget::Task(id("Validation")))
+        .unwrap();
+    h.state().clock.advance(jiff::SignedDuration::from_mins(25));
+    store.start(wt_core::TimerTarget::Task(id("API"))).unwrap();
+    h.state().clock.advance(jiff::SignedDuration::from_mins(40));
+    store.stop().unwrap();
+    h.run();
+
+    h.get_by_label("25m");
+    h.get_by_label("40m");
+    h.get_by_label("1h 05m");
+}

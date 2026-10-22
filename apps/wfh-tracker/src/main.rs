@@ -27,6 +27,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let dir = wt_platform::data_dir()?;
     std::fs::create_dir_all(&dir)?;
+    if let Err(e) = wt_platform::register_notifications(&dir) {
+        eprintln!("wfh-tracker: {e}");
+    }
     let clock = Arc::new(SystemClock);
     let store = SqliteStore::open(&dir.join("wfh-tracker.db"), clock.clone())?;
     store.seed_defaults()?;

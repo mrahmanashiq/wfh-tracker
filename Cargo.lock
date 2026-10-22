@@ -6048,6 +6048,7 @@ dependencies = [
  "notify-rust",
  "thiserror 2.0.21",
  "tray-icon",
+ "windows-registry",
  "wt-core",
 ]
 

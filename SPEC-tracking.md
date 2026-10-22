@@ -14,7 +14,7 @@ Record where time actually goes, and keep the office day near 8 hours. One timer
 8. If the app was closed, or the PC slept, while a timer ran, the timer is stopped at the last moment the app was alive, and a banner tells me so.
 3. A **status bar**, always visible, shows the running task and its elapsed time, plus today's office clock: `6h 12m / 8h`.
 4. Every **N minutes of continuous work** (default 25, or the task's own value) I get a **break reminder**. **Take break** starts a break timer and pauses work. When the break length (default 5 min) has passed, I get "Break over" and a **Resume ‹task›** button.
-5. I press **Meeting** (a button in the status bar, or the global hotkey **Ctrl+Alt+M**) when a Teams call starts. The current timer stops and a meeting timer starts. Pressing it again ends the meeting and offers **Resume ‹task›**.
+5. I press **Meeting** (a button in the status bar, or the global hotkey **Ctrl+Alt+M**) when a Teams call starts. The current timer stops and a meeting timer starts. Pressing it again ends the meeting and **automatically restarts the timer of the task the meeting interrupted** (changed 2026-10-22 at the user's request; it used to offer a Resume button).
 6. At **8h** of office time I get "Office day complete — wrap up". At **9h**, a soft warning. Time beyond 9h shows as **overtime**. On a weekend day (Fri/Sat) there's no 8h reminder, and all office time is overtime.
 
 ## Domain rules
@@ -58,7 +58,7 @@ Session table: `id, task_id NULL → task, category_id → category, kind, start
 1. Start "Validation", then start "API": exactly two sessions exist, the first ended at the instant the second started, and only "API" is running.
 2. With a simulated clock, 8h00m of office time emits `TargetReached` once, 9h00m emits `SoftCeiling` once, and 9h30m reports `Overtime { minutes: 30 }`. The running timer is never stopped.
 3. Breaks are excluded from office time. A 23:00–01:00 session (local time) gives 60 min to each day.
-4. Meeting toggle during an office task: the task's session ends, a meeting session runs, and ending it offers to resume the task. The hotkey does the same as the button.
+4. Meeting toggle during an office task: the task's session ends and a meeting session runs. Ending the meeting starts the task's timer again at the same instant. A meeting started while idle resumes nothing. A task deleted during the meeting isn't resumed. The hotkey does the same as the button, and the rule holds across an app restart during the meeting.
 5. 25 min of continuous work emits `BreakDue`. Ignoring it emits it again 5 min later. Taking a break, then 5 min passing, emits `BreakOver`.
 6. On Friday, 3h of office work gives no 8h notice and `Overtime { minutes: 180 }`.
 7. `cargo xtask ci` passes. A manual check confirms that a real Windows toast appears and the hotkey works while the window is hidden.
