@@ -11,7 +11,7 @@ fn at(ts: &str) -> Timestamp {
 }
 
 fn store_at(ts: &str) -> (SqliteStore, Arc<FixedClock>) {
-    let clock = Arc::new(FixedClock::new(at(ts)));
+    let clock = Arc::new(FixedClock::utc(at(ts)));
     (SqliteStore::open_in_memory(clock.clone()).unwrap(), clock)
 }
 

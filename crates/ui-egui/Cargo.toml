@@ -13,6 +13,8 @@ wt-core.workspace = true
 
 [dev-dependencies]
 egui_kittest.workspace = true
+# Real store in memory for UI tests; the layering check ignores dev-dependencies.
+wt-storage.workspace = true
 
 [lints]
 workspace = true

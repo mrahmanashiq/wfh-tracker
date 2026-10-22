@@ -8,7 +8,7 @@ use wt_core::{FixedClock, Settings, SettingsRepo};
 use wt_storage::SqliteStore;
 
 fn store() -> SqliteStore {
-    let clock = Arc::new(FixedClock::new(Timestamp::UNIX_EPOCH));
+    let clock = Arc::new(FixedClock::utc(Timestamp::UNIX_EPOCH));
     SqliteStore::open_in_memory(clock).unwrap()
 }
 
@@ -68,7 +68,7 @@ fn ceiling_below_target_is_rejected_and_nothing_is_stored() {
 #[test]
 fn settings_survive_reopening_the_database_file() {
     let path = std::env::temp_dir().join(format!("wt-settings-{}.db", wt_core::Id::new()));
-    let clock = Arc::new(FixedClock::new(Timestamp::UNIX_EPOCH));
+    let clock = Arc::new(FixedClock::utc(Timestamp::UNIX_EPOCH));
     let mine = Settings {
         break_interval_min: 45,
         ..Settings::default()

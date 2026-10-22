@@ -5164,6 +5164,7 @@ dependencies = [
  "egui_kittest",
  "jiff",
  "wt-core",
+ "wt-storage",
 ]
 
 [[package]]

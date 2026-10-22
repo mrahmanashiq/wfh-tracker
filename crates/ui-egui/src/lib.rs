@@ -1,15 +1,24 @@
 //! egui front end for WFH Tracker. It talks to the rest of the app only
 //! through the traits in `wt-core`, so the UI can be replaced on its own.
 
+mod categories_screen;
 mod settings_screen;
+mod tasks_screen;
+mod widgets;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use egui::{Context, ViewportCommand};
-use wt_core::{Autostart, SettingsRepo};
+use wt_core::{Autostart, CategoryRepo, Clock, SettingsRepo, TaskRepo};
 
+pub use categories_screen::CategoriesScreen;
 pub use settings_screen::SettingsScreen;
+pub use tasks_screen::TasksScreen;
+
+/// Anything that stores everything the UI needs.
+pub trait Store: SettingsRepo + TaskRepo + CategoryRepo {}
+impl<T: SettingsRepo + TaskRepo + CategoryRepo> Store for T {}
 
 /// Lets other threads (the tray icon) show the window or quit the app.
 #[derive(Clone)]
@@ -37,10 +46,21 @@ impl ShellHandle {
 /// The app window. Closing it hides it to the tray; only [`ShellHandle::quit`] exits.
 pub struct WfhApp<S> {
     store: S,
+    clock: Arc<dyn Clock>,
     autostart: Box<dyn Autostart>,
+    screen: Screen,
+    tasks: TasksScreen,
+    categories: CategoriesScreen,
     settings: SettingsScreen,
     quitting: Arc<AtomicBool>,
     start: Start,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Screen {
+    Tasks,
+    Categories,
+    Settings,
 }
 
 /// eframe always shows the window once its first frame is painted, so a hidden
@@ -52,10 +72,11 @@ enum Start {
     HideNow,
 }
 
-impl<S: SettingsRepo> WfhApp<S> {
+impl<S: Store> WfhApp<S> {
     pub fn new(
         ctx: &Context,
         store: S,
+        clock: Arc<dyn Clock>,
         autostart: Box<dyn Autostart>,
         start_hidden: bool,
     ) -> (Self, ShellHandle) {
@@ -67,7 +88,11 @@ impl<S: SettingsRepo> WfhApp<S> {
         let settings = SettingsScreen::load(&store);
         let app = Self {
             store,
+            clock,
             autostart,
+            screen: Screen::Tasks,
+            tasks: TasksScreen::default(),
+            categories: CategoriesScreen::default(),
             settings,
             quitting,
             start: if start_hidden {
@@ -80,7 +105,7 @@ impl<S: SettingsRepo> WfhApp<S> {
     }
 }
 
-impl<S: SettingsRepo> eframe::App for WfhApp<S> {
+impl<S: Store> eframe::App for WfhApp<S> {
     /// Runs even while the window is hidden, so tray commands still land.
     fn logic(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.viewport().close_requested()) && !self.quitting.load(Ordering::SeqCst) {
@@ -106,8 +131,26 @@ impl<S: SettingsRepo> eframe::App for WfhApp<S> {
             ui.heading("WFH Tracker");
             ui.add_space(4.0);
         });
-        egui::CentralPanel::default().show(ui, |ui| {
-            self.settings.ui(ui, &self.store, self.autostart.as_ref());
+        egui::Panel::left("nav")
+            .resizable(false)
+            .default_size(140.0)
+            .show(ui, |ui| {
+                ui.add_space(8.0);
+                for (screen, name) in [
+                    (Screen::Tasks, "Tasks"),
+                    (Screen::Categories, "Categories"),
+                    (Screen::Settings, "Settings"),
+                ] {
+                    ui.selectable_value(&mut self.screen, screen, name);
+                }
+            });
+        egui::CentralPanel::default().show(ui, |ui| match self.screen {
+            Screen::Tasks => {
+                self.tasks
+                    .ui(ui, &self.store, &self.store, self.clock.as_ref());
+            }
+            Screen::Categories => self.categories.ui(ui, &self.store),
+            Screen::Settings => self.settings.ui(ui, &self.store, self.autostart.as_ref()),
         });
     }
 }

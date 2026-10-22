@@ -10,10 +10,12 @@ pub mod clock;
 pub mod id;
 pub mod repo;
 pub mod settings;
+pub mod task;
 
 pub use autostart::{Autostart, AutostartError};
 pub use category::{Category, CategoryKind, NewCategory, ParseError, Rgb};
 pub use clock::{Clock, FixedClock};
 pub use id::Id;
-pub use repo::{CategoryRepo, Meta, RepoError, SettingsRepo};
+pub use repo::{CategoryRepo, Meta, RepoError, SettingsRepo, TaskRepo};
 pub use settings::{Settings, SettingsError};
+pub use task::{Placement, Task, TaskTree, today_view};

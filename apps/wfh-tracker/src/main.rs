@@ -17,7 +17,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let dir = wt_platform::data_dir()?;
     std::fs::create_dir_all(&dir)?;
-    let store = SqliteStore::open(&dir.join("wfh-tracker.db"), Arc::new(SystemClock))?;
+    let clock = Arc::new(SystemClock);
+    let store = SqliteStore::open(&dir.join("wfh-tracker.db"), clock.clone())?;
     store.seed_defaults()?;
 
     // Keep the OS entry in line with the saved preference (on by default).
@@ -48,7 +49,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         "WFH Tracker",
         options,
         Box::new(move |cc| {
-            let (app, shell) = WfhApp::new(&cc.egui_ctx, store, Box::new(autostart), start_hidden);
+            let (app, shell) = WfhApp::new(
+                &cc.egui_ctx,
+                store,
+                clock,
+                Box::new(autostart),
+                start_hidden,
+            );
             // Created here, on the event-loop thread, as tray-icon requires on Windows.
             let tray = Tray::create(move |action| match action {
                 TrayAction::Open => shell.show(),

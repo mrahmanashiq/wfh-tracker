@@ -45,8 +45,7 @@ Migration `002_tasks.sql`:
 | parent_id | TEXT NULL → task(id) | null = top-level |
 | title | TEXT NOT NULL | |
 | category_id | TEXT NOT NULL → category(id) | |
-| status | TEXT CHECK IN ('open','done') | |
-| done_at | TEXT NULL | fixed-width RFC 3339 |
+| done_at | TEXT NULL | fixed-width RFC 3339; NULL = open. This is the only status field, so there's no separate `status` column that could disagree with it. |
 
 `TaskRepo` (in `wt-core`): `list_live`, `create(NewTask)`, `rename`, `set_category`, `set_done(id, bool)`, `delete` (soft, cascades to children). `CategoryRepo::delete` now returns `RepoError::InUse { tasks: Vec<String> }` when tasks still reference the category.
 

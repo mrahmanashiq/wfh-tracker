@@ -37,6 +37,10 @@ impl Clock for SystemClock {
     fn now(&self) -> Timestamp {
         Timestamp::now()
     }
+
+    fn time_zone(&self) -> jiff::tz::TimeZone {
+        jiff::tz::TimeZone::system()
+    }
 }
 
 /// Per-user data folder, e.g. `%APPDATA%\wfh-tracker\data` on Windows.

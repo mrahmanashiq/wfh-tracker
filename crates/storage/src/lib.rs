@@ -2,6 +2,7 @@
 
 mod category;
 mod settings;
+mod task;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -9,10 +10,13 @@ use std::sync::Arc;
 use jiff::Timestamp;
 use rusqlite::Connection;
 use rusqlite_migration::{M, Migrations};
-use wt_core::{Clock, RepoError};
+use wt_core::{Clock, Id, RepoError};
 
 fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(include_str!("migrations/001_foundation.sql"))])
+    Migrations::new(vec![
+        M::up(include_str!("migrations/001_foundation.sql")),
+        M::up(include_str!("migrations/002_tasks.sql")),
+    ])
 }
 
 /// One SQLite database implementing every repository trait.
@@ -58,6 +62,20 @@ fn format_ts(ts: Timestamp) -> String {
 
 fn backend(e: rusqlite::Error) -> RepoError {
     RepoError::Backend(e.to_string())
+}
+
+/// `NotFound` when an update touched no live row.
+fn require_changed(id: Id, changed_rows: usize) -> Result<(), RepoError> {
+    if changed_rows == 0 {
+        Err(RepoError::NotFound(id))
+    } else {
+        Ok(())
+    }
+}
+
+fn parse_id(s: &str) -> Result<Id, RepoError> {
+    s.parse()
+        .map_err(|_| RepoError::Corrupt(format!("bad id `{s}`")))
 }
 
 fn parse_ts(s: &str) -> Result<Timestamp, RepoError> {

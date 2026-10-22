@@ -2,7 +2,7 @@ use rusqlite::{OptionalExtension, Row, params};
 use wt_core::repo::RepoResult;
 use wt_core::{Category, CategoryRepo, Id, Meta, NewCategory, RepoError, Rgb};
 
-use crate::{SqliteStore, backend, parse_ts};
+use crate::{SqliteStore, backend, parse_id, parse_ts, require_changed};
 
 const COLUMNS: &str = "id, name, kind, color, created_at, updated_at, deleted_at";
 
@@ -33,10 +33,7 @@ impl CategoryRow {
     fn into_category(self) -> RepoResult<Category> {
         Ok(Category {
             meta: Meta {
-                id: self
-                    .id
-                    .parse()
-                    .map_err(|_| RepoError::Corrupt(format!("bad id `{}`", self.id)))?,
+                id: parse_id(&self.id)?,
                 created_at: parse_ts(&self.created_at)?,
                 updated_at: parse_ts(&self.updated_at)?,
                 deleted_at: self.deleted_at.as_deref().map(parse_ts).transpose()?,
@@ -65,15 +62,6 @@ impl SqliteStore {
 
 fn corrupt(e: impl std::fmt::Display) -> RepoError {
     RepoError::Corrupt(e.to_string())
-}
-
-/// `NotFound` when an update touched no live row.
-fn require_changed(id: Id, changed_rows: usize) -> RepoResult<()> {
-    if changed_rows == 0 {
-        Err(RepoError::NotFound(id))
-    } else {
-        Ok(())
-    }
 }
 
 impl CategoryRepo for SqliteStore {
@@ -124,6 +112,22 @@ impl CategoryRepo for SqliteStore {
     }
 
     fn delete(&self, id: Id) -> RepoResult<()> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT title FROM task
+                 WHERE category_id = ?1 AND parent_id IS NULL AND deleted_at IS NULL
+                 ORDER BY id",
+            )
+            .map_err(backend)?;
+        let tasks = stmt
+            .query_map([id.to_string()], |r| r.get::<_, String>(0))
+            .map_err(backend)?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(backend)?;
+        if !tasks.is_empty() {
+            return Err(RepoError::InUse { tasks });
+        }
         let changed = self
             .conn
             .execute(
