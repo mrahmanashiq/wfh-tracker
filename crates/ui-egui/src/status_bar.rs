@@ -1,9 +1,11 @@
 use egui::{Color32, CornerRadius, RichText, Sense, Ui, vec2};
 use jiff::{SignedDuration, Timestamp};
+use wt_core::clock_text as time_of_day;
 use wt_core::repo::RepoResult;
 use wt_core::{
-    CategoryKind, Clock, MeetingToggle, Notice, Notifier, OfficeStatus, Reminders, Session,
-    SessionRepo, Settings, Tick, TimerTarget, office_status, office_time, tracked_time,
+    Block, CategoryKind, Clock, MeetingToggle, Notice, Notifier, OfficeStatus, Reminders, Session,
+    SessionRepo, Settings, Tick, TimerTarget, active_block, office_status, office_time,
+    tracked_time,
 };
 
 use crate::theme::palette;
@@ -41,6 +43,7 @@ impl StatusBar {
         store: &dyn SessionRepo,
         settings: &Settings,
         clock: &dyn Clock,
+        blocks: &[Block],
     ) {
         let now = clock.now();
         let loaded = (|| -> RepoResult<_> {
@@ -98,6 +101,18 @@ impl StatusBar {
             }
 
             ui.add_space(12.0);
+            if let Some(block) = active_block(blocks, now, &clock.time_zone()) {
+                ui.label(
+                    RichText::new(format!(
+                        "{} block · until {}",
+                        block_name(store, block),
+                        time_of_day(block.end_min)
+                    ))
+                    .small()
+                    .color(p.accent),
+                );
+                ui.add_space(8.0);
+            }
             let today = clock.today();
             let office = office_time(&sessions, today, &clock.time_zone(), now);
             let status = office_status(office, settings, today.weekday());
@@ -207,6 +222,7 @@ impl StatusBar {
         settings: &Settings,
         clock: &dyn Clock,
         notifier: &dyn Notifier,
+        blocks: &[Block],
     ) {
         let now = clock.now();
         let tz = clock.time_zone();
@@ -241,10 +257,11 @@ impl StatusBar {
             tz: &tz,
             settings,
             break_interval_min: interval,
+            blocks,
         });
         for notice in notices {
-            let (title, body) = notice_text(notice, settings, interval);
-            notifier.notify(title, &body);
+            let (title, body) = notice_text(notice, settings, interval, store, blocks);
+            notifier.notify(&title, &body);
         }
     }
 
@@ -348,12 +365,33 @@ fn office_text(
     }
 }
 
+/// The block's label, or its category's name.
+fn block_name(store: &dyn SessionRepo, block: &Block) -> String {
+    if !block.label.is_empty() {
+        return block.label.clone();
+    }
+    store
+        .list()
+        .ok()
+        .and_then(|cats| cats.into_iter().find(|c| c.meta.id == block.category_id))
+        .map_or_else(|| "Scheduled".to_owned(), |c| c.name)
+}
+
 fn notice_text(
     notice: Notice,
     settings: &Settings,
     interval: Option<u32>,
-) -> (&'static str, String) {
-    match notice {
+    store: &dyn SessionRepo,
+    blocks: &[Block],
+) -> (String, String) {
+    let (title, body) = match notice {
+        Notice::BlockStarted { block } => {
+            let title = blocks.iter().find(|b| b.meta.id == block).map_or_else(
+                || "Scheduled block".to_owned(),
+                |b| format!("{} block {}", block_name(store, b), b.times_text()),
+            );
+            return (title, "Time to start your timer.".to_owned());
+        }
         Notice::TargetReached => (
             "Office day complete",
             format!(
@@ -377,7 +415,8 @@ fn notice_text(
             ),
         ),
         Notice::BreakOver => ("Break over", "Ready to get back to it?".to_owned()),
-    }
+    };
+    (title.to_owned(), body)
 }
 
 /// A thin bar: office time against the daily target (full when reached).

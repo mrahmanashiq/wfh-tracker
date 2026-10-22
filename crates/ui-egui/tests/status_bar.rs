@@ -49,7 +49,7 @@ fn harness() -> Harness<'static, State> {
     Harness::new_ui_state(
         |ui, s: &mut State| {
             s.bar
-                .ui(ui, &s.store, &Settings::default(), s.clock.as_ref());
+                .ui(ui, &s.store, &Settings::default(), s.clock.as_ref(), &[]);
             s.bar.quick_start(ui, &s.store);
         },
         State {
@@ -79,6 +79,7 @@ impl State {
             &Settings::default(),
             self.clock.as_ref(),
             &self.notifier,
+            &[],
         );
     }
 

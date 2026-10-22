@@ -95,6 +95,7 @@ pub enum Icon {
     Doc,
     Back,
     Forward,
+    Target,
 }
 
 impl Icon {
@@ -169,6 +170,11 @@ impl Icon {
                 let s = Stroke::new(1.8, color);
                 painter.line_segment([c + vec2(2.0 * dir, -5.0), c + vec2(-3.0 * dir, 0.0)], s);
                 painter.line_segment([c + vec2(-3.0 * dir, 0.0), c + vec2(2.0 * dir, 5.0)], s);
+            }
+            Icon::Target => {
+                painter.circle_stroke(c, 6.5, Stroke::new(1.5, color));
+                painter.circle_stroke(c, 3.5, Stroke::new(1.5, color));
+                painter.circle_filled(c, 1.3, color);
             }
             Icon::Plus => {
                 let s = Stroke::new(1.8, color);

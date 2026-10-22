@@ -7,8 +7,8 @@ use crate::task::clean_title;
 use jiff::SignedDuration;
 
 use crate::{
-    Category, CategoryKind, Id, MeetingToggle, NewCategory, Placement, Rgb, Session, Settings,
-    SettingsError, Switch, Task, TimerTarget,
+    Block, BlockDraft, Category, CategoryKind, Id, MeetingToggle, NewCategory, Period, Placement,
+    Rgb, Session, Settings, SettingsError, Switch, Target, Task, TimerTarget,
 };
 
 /// Columns every record carries so a future sync can merge and propagate deletes.
@@ -285,4 +285,37 @@ fn first_of_kind(repo: &(impl CategoryRepo + ?Sized), kind: CategoryKind) -> Rep
         .into_iter()
         .find(|c| c.kind == kind)
         .ok_or(RepoError::Invalid(missing))
+}
+
+/// Targets and scheduled blocks. Backends implement the primitives; the
+/// provided methods validate.
+pub trait PlanRepo {
+    fn targets(&self) -> RepoResult<Vec<Target>>;
+    /// Creates or replaces the live target for this category and period.
+    fn write_target(&self, category_id: Id, period: Period, minutes: u32) -> RepoResult<Target>;
+    fn delete_target(&self, id: Id) -> RepoResult<()>;
+    fn blocks(&self) -> RepoResult<Vec<Block>>;
+    fn insert_block(&self, draft: &BlockDraft) -> RepoResult<Block>;
+    fn write_block(&self, id: Id, draft: &BlockDraft) -> RepoResult<Block>;
+    fn delete_block(&self, id: Id) -> RepoResult<()>;
+
+    /// Sets a category's target for a period, in whole hours (1 to the
+    /// period's maximum). Setting it again replaces it.
+    fn set_target(&self, category_id: Id, period: Period, hours: u32) -> RepoResult<Target> {
+        if hours == 0 || hours > period.max_hours() {
+            return Err(RepoError::Invalid(match period {
+                Period::Week => "a weekly target must be 1–200 hours",
+                Period::Month => "a monthly target must be 1–800 hours",
+            }));
+        }
+        self.write_target(category_id, period, hours * 60)
+    }
+
+    fn add_block(&self, draft: &BlockDraft) -> RepoResult<Block> {
+        self.insert_block(&draft.validated()?)
+    }
+
+    fn update_block(&self, id: Id, draft: &BlockDraft) -> RepoResult<Block> {
+        self.write_block(id, &draft.validated()?)
+    }
 }

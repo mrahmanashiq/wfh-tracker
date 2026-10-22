@@ -36,6 +36,8 @@ pub struct Palette {
     /// Running-timer row and pill background.
     pub accent_soft: Color32,
     pub danger: Color32,
+    /// A met target.
+    pub success: Color32,
     pub star: Color32,
 }
 
@@ -49,6 +51,7 @@ const LIGHT: Palette = Palette {
     accent: Color32::from_rgb(0x1a, 0x73, 0xe8),
     accent_soft: Color32::from_rgb(0xe8, 0xf0, 0xfd),
     danger: Color32::from_rgb(0xe5, 0x48, 0x4d),
+    success: Color32::from_rgb(0x1f, 0x9d, 0x55),
     star: Color32::from_rgb(0xf5, 0xb7, 0x00),
 };
 
@@ -62,6 +65,7 @@ const DARK: Palette = Palette {
     accent: Color32::from_rgb(0x4c, 0x9a, 0xff),
     accent_soft: Color32::from_rgb(0x1f, 0x33, 0x52),
     danger: Color32::from_rgb(0xff, 0x6b, 0x6b),
+    success: Color32::from_rgb(0x4c, 0xd9, 0x7b),
     star: Color32::from_rgb(0xff, 0xc8, 0x2e),
 };
 
