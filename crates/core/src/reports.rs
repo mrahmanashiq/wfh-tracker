@@ -279,51 +279,77 @@ impl<'a> Day<'a> {
                 && self.kinds.get(&task.category_id).is_some_and(|k| kind(*k)))
     }
 
-    /// Lines for tasks with time of the matching kinds: a parent with its total
-    /// and its relevant sub-tasks indented, or a single line.
+    /// Lines for tasks with time of the matching kinds: a parent with its
+    /// total and its relevant sub-tasks indented below (any depth), or a
+    /// single line for a task with nothing relevant below it.
     fn task_lines(
         &self,
         input: &ReportInput<'_>,
         kind: impl Fn(CategoryKind) -> bool,
     ) -> Vec<String> {
         let kind: &dyn Fn(CategoryKind) -> bool = &kind;
-        let mut tops: Vec<&Task> = input
-            .tasks
-            .iter()
-            .filter(|t| t.parent_id.is_none())
-            .collect();
-        tops.sort_by_key(|t| t.meta.id);
-
         let mut lines = Vec::new();
-        for top in tops {
-            let mut children: Vec<&Task> = input
-                .tasks
-                .iter()
-                .filter(|t| t.parent_id == Some(top.meta.id))
-                .collect();
-            children.sort_by_key(|t| t.meta.id);
-            let shown: Vec<&Task> = children
-                .iter()
-                .copied()
-                .filter(|t| self.relevant(t, kind))
-                .collect();
-
-            if shown.is_empty() {
-                if self.relevant(top, kind) {
-                    lines.push(self.task_line(top, kind));
-                }
-                continue;
-            }
-            let total = sum(children.iter().map(|t| self.task_time(t.meta.id, kind)))
-                .saturating_add(self.task_time(top.meta.id, kind));
-            lines.push(with_time(&top.title, total));
-            lines.extend(
-                shown
-                    .into_iter()
-                    .map(|t| format!("  {}", self.task_line(t, kind))),
-            );
+        for top in children_of(input.tasks, None) {
+            self.task_tree_lines(input.tasks, top, 0, kind, &mut lines);
         }
         lines
+    }
+
+    fn task_tree_lines(
+        &self,
+        all: &[Task],
+        task: &Task,
+        depth: usize,
+        kind: &dyn Fn(CategoryKind) -> bool,
+        lines: &mut Vec<String>,
+    ) {
+        let indent = "  ".repeat(depth);
+        let kids = children_of(all, Some(task.meta.id));
+        let shown: Vec<&Task> = kids
+            .iter()
+            .copied()
+            .filter(|t| self.relevant_below(all, t, kind))
+            .collect();
+        if shown.is_empty() {
+            if self.relevant(task, kind) {
+                lines.push(format!("{indent}{}", self.task_line(task, kind)));
+            }
+            return;
+        }
+        let total = self.family_time(all, task, kind);
+        lines.push(format!("{indent}{}", with_time(&task.title, total)));
+        for kid in shown {
+            self.task_tree_lines(all, kid, depth + 1, kind, lines);
+        }
+    }
+
+    /// Relevant itself, or something below it is.
+    fn relevant_below(
+        &self,
+        all: &[Task],
+        task: &Task,
+        kind: &dyn Fn(CategoryKind) -> bool,
+    ) -> bool {
+        self.relevant(task, kind)
+            || children_of(all, Some(task.meta.id))
+                .into_iter()
+                .any(|t| self.relevant_below(all, t, kind))
+    }
+
+    /// Time on a task and everything below it.
+    fn family_time(
+        &self,
+        all: &[Task],
+        task: &Task,
+        kind: &dyn Fn(CategoryKind) -> bool,
+    ) -> SignedDuration {
+        children_of(all, Some(task.meta.id))
+            .into_iter()
+            .map(|t| self.family_time(all, t, kind))
+            .fold(
+                self.task_time(task.meta.id, kind),
+                SignedDuration::saturating_add,
+            )
     }
 
     /// `✅ Title — 50m`: ✅ when done by the end of the report day.
@@ -343,4 +369,11 @@ fn with_time(text: &str, time: SignedDuration) -> String {
     } else {
         text.to_owned()
     }
+}
+
+/// Tasks directly under `parent` (top-level tasks for `None`), in creation order.
+fn children_of(all: &[Task], parent: Option<Id>) -> Vec<&Task> {
+    let mut kids: Vec<&Task> = all.iter().filter(|t| t.parent_id == parent).collect();
+    kids.sort_by_key(|t| t.meta.id);
+    kids
 }

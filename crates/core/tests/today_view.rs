@@ -35,7 +35,7 @@ fn titles(view: &[TaskTree]) -> Vec<(String, Vec<String>)> {
         .map(|t| {
             (
                 t.task.title.clone(),
-                t.subtasks.iter().map(|s| s.title.clone()).collect(),
+                t.children.iter().map(|c| c.task.title.clone()).collect(),
             )
         })
         .collect()
@@ -128,4 +128,18 @@ fn tasks_and_subtasks_keep_creation_order() {
             ("Second".to_owned(), vec![])
         ]
     );
+}
+
+#[test]
+fn a_third_level_shows_under_its_sub_task_and_keeps_the_chain_visible() {
+    let checkout = task("Checkout", None, Some("2026-10-19T06:00:00Z"));
+    let api = task("API", Some(&checkout), Some("2026-10-19T06:00:00Z"));
+    let auth = task("Auth header", Some(&api), None);
+
+    let v = view(&[checkout, api, auth], date(2026, 10, 21));
+
+    assert_eq!(v.len(), 1);
+    assert_eq!(v[0].children[0].task.title, "API");
+    assert_eq!(v[0].children[0].children[0].task.title, "Auth header");
+    assert_eq!(v[0].children[0].progress, Some((0, 1)));
 }

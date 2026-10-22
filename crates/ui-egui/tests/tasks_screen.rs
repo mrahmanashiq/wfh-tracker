@@ -163,3 +163,16 @@ fn each_row_shows_todays_time_and_a_parent_includes_its_subtasks() {
     h.get_by_label("40m");
     h.get_by_label("1h 05m");
 }
+
+#[test]
+fn a_sub_task_can_have_sub_tasks_but_the_third_level_cannot() {
+    let mut h = harness();
+    add_task(&mut h, "Checkout");
+    add_subtask(&mut h, "Checkout", "API");
+
+    add_subtask(&mut h, "API", "Auth header");
+    h.get_by_label("Auth header");
+
+    hover_row(&mut h, "Auth header");
+    assert!(h.query_by_label("Add sub-task").is_none());
+}

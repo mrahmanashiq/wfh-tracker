@@ -452,3 +452,40 @@ fn time_under_a_minute_is_left_out_instead_of_showing_zero() {
     let office_text = d.office_report(THURSDAY, &TimeZone::UTC);
     assert!(!office_text.contains("Quick look"), "{office_text}");
 }
+
+#[test]
+fn a_third_level_is_indented_and_counted_in_every_total_above() {
+    let mut d = Day::new();
+    let office = d.office.clone();
+    let checkout = d.task("Checkout", &office, None, None);
+    let api = d.task("API", &office, Some(checkout), None);
+    let auth = d.task(
+        "Auth header",
+        &office,
+        Some(api),
+        Some("2026-10-22T04:00:00Z"),
+    );
+    d.session(
+        Some(api),
+        &office,
+        "2026-10-22T03:00:00Z",
+        "2026-10-22T03:20:00Z",
+    );
+    d.session(
+        Some(auth),
+        &office,
+        "2026-10-22T03:30:00Z",
+        "2026-10-22T04:00:00Z",
+    );
+
+    assert_eq!(
+        d.office_report(THURSDAY, &TimeZone::UTC),
+        "Office report — Thu 22 Oct 2026 — 0h 50m (target 8h)\n\
+         \n\
+         Checkout — 50m\n  \
+         API — 50m\n    \
+         ✅ Auth header — 30m\n\
+         Meetings — none\n\
+         Overtime — none"
+    );
+}

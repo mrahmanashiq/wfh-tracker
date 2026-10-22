@@ -6,6 +6,13 @@ use crate::{SqliteStore, backend, parse_id, parse_ts, require_changed};
 
 const COLUMNS: &str = "id, parent_id, title, category_id, done_at, created_at, updated_at, deleted_at, break_interval_min";
 
+/// The live task `?1` and every live task below it, as `subtree(id)`.
+const SUBTREE: &str = "WITH RECURSIVE subtree(id) AS (
+    SELECT id FROM task WHERE id = ?1 AND deleted_at IS NULL
+    UNION ALL
+    SELECT t.id FROM task t JOIN subtree s ON t.parent_id = s.id WHERE t.deleted_at IS NULL
+)";
+
 /// Raw row, read inside the rusqlite closure and validated outside it.
 struct TaskRow {
     id: String,
@@ -123,8 +130,10 @@ impl TaskRepo for SqliteStore {
         let changed = self
             .conn
             .execute(
-                "UPDATE task SET category_id = ?2, updated_at = ?3
-                 WHERE (id = ?1 OR parent_id = ?1) AND deleted_at IS NULL",
+                &format!(
+                    "{SUBTREE} UPDATE task SET category_id = ?2, updated_at = ?3
+                     WHERE id IN (SELECT id FROM subtree) AND deleted_at IS NULL"
+                ),
                 params![id.to_string(), category_id.to_string(), self.now()],
             )
             .map_err(backend)?;
@@ -161,8 +170,10 @@ impl TaskRepo for SqliteStore {
         let changed = self
             .conn
             .execute(
-                "UPDATE task SET deleted_at = ?2, updated_at = ?2
-                 WHERE (id = ?1 OR parent_id = ?1) AND deleted_at IS NULL",
+                &format!(
+                    "{SUBTREE} UPDATE task SET deleted_at = ?2, updated_at = ?2
+                     WHERE id IN (SELECT id FROM subtree) AND deleted_at IS NULL"
+                ),
                 params![id.to_string(), self.now()],
             )
             .map_err(backend)?;

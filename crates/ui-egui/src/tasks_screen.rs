@@ -6,8 +6,9 @@ use egui::{
 };
 use jiff::SignedDuration;
 use wt_core::repo::RepoResult;
+use wt_core::task::MAX_DEPTH;
 use wt_core::{
-    Category, CategoryRepo, Clock, Id, Placement, SessionRepo, Settings, Task, TaskRepo,
+    Category, CategoryRepo, Clock, Id, Placement, SessionRepo, Settings, Task, TaskRepo, TaskTree,
     TimerTarget, duration_text, today_view, tracked_time,
 };
 
@@ -62,8 +63,18 @@ struct Row<'a> {
     progress: Option<(usize, usize)>,
     /// Shown as a tag on top-level rows only.
     category: Option<&'a Category>,
-    /// Time tracked on it today (a parent includes its sub-tasks).
+    /// Time tracked on it today (a parent includes everything below it).
     time: SignedDuration,
+    /// 0 for a top-level task, 1 for a sub-task, 2 for a sub-sub-task.
+    depth: usize,
+}
+
+/// What every row of one frame shares.
+struct RowContext<'a> {
+    by_id: &'a HashMap<Id, &'a Category>,
+    cats: &'a [Category],
+    /// Today's time per task, including everything below it.
+    family_time: &'a HashMap<Id, SignedDuration>,
 }
 
 impl TasksScreen {
@@ -117,46 +128,21 @@ impl TasksScreen {
         }
         let tz = clock.time_zone();
         let own_time = |id: Id| tracked_time(&sessions, TimerTarget::Task(id), today, &tz, now);
+        let family_time: HashMap<Id, SignedDuration> = all
+            .iter()
+            .map(|t| (t.meta.id, family_time(&all, t.meta.id, &own_time)))
+            .collect();
+        let context = RowContext {
+            by_id: &by_id,
+            cats: &cats,
+            family_time: &family_time,
+        };
         let mut hovered = None;
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .show(ui, |ui| {
                 for tree in &view {
-                    let family_time = all
-                        .iter()
-                        .filter(|t| t.parent_id == Some(tree.task.meta.id))
-                        .map(|t| own_time(t.meta.id))
-                        .fold(own_time(tree.task.meta.id), SignedDuration::saturating_add);
-                    let top = Row {
-                        task: &tree.task,
-                        progress: tree.progress,
-                        category: by_id.get(&tree.task.category_id).copied(),
-                        time: family_time,
-                    };
-                    self.task_row(ui, &top, &cats, &mut hovered, &mut action);
-                    let has_children = !tree.subtasks.is_empty()
-                        || self
-                            .adding_under
-                            .as_ref()
-                            .is_some_and(|a| a.0 == tree.task.meta.id);
-                    if has_children {
-                        // Sub-tasks sit under the title, without a guide line (Things-style).
-                        ui.horizontal(|ui| {
-                            ui.add_space(28.0);
-                            ui.vertical(|ui| {
-                                for sub in &tree.subtasks {
-                                    let row = Row {
-                                        task: sub,
-                                        progress: None,
-                                        category: None,
-                                        time: own_time(sub.meta.id),
-                                    };
-                                    self.task_row(ui, &row, &cats, &mut hovered, &mut action);
-                                }
-                                self.subtask_field(ui, tree.task.meta.id, &mut action);
-                            });
-                        });
-                    }
+                    self.tree_rows(ui, tree, 0, &context, &mut hovered, &mut action);
                     ui.add_space(6.0);
                 }
             });
@@ -165,6 +151,43 @@ impl TasksScreen {
         if let Some(action) = action {
             self.apply(action, store);
         }
+    }
+
+    /// A task's row, then (indented, Things-style without a guide line) the
+    /// rows below it and the "add sub-task" field when it's open.
+    fn tree_rows(
+        &mut self,
+        ui: &mut Ui,
+        tree: &TaskTree,
+        depth: usize,
+        context: &RowContext<'_>,
+        hovered: &mut Option<Id>,
+        action: &mut Option<Action>,
+    ) {
+        let id = tree.task.meta.id;
+        let row = Row {
+            task: &tree.task,
+            progress: tree.progress,
+            category: (depth == 0)
+                .then(|| context.by_id.get(&tree.task.category_id).copied())
+                .flatten(),
+            time: context.family_time.get(&id).copied().unwrap_or_default(),
+            depth,
+        };
+        self.task_row(ui, &row, context.cats, hovered, action);
+        let adding_here = self.adding_under.as_ref().is_some_and(|a| a.0 == id);
+        if tree.children.is_empty() && !adding_here {
+            return;
+        }
+        ui.horizontal(|ui| {
+            ui.add_space(28.0);
+            ui.vertical(|ui| {
+                for child in &tree.children {
+                    self.tree_rows(ui, child, depth + 1, context, hovered, action);
+                }
+                self.subtask_field(ui, id, action);
+            });
+        });
     }
 
     /// Things' "New To-Do" line: a ring, a borderless field and a category picker.
@@ -245,7 +268,7 @@ impl TasksScreen {
                         return;
                     }
                     if show_actions {
-                        self.row_icons(ui, row.task, action);
+                        self.row_icons(ui, row.task, row.depth, action);
                     }
                     if running {
                         if icon_button(ui, Icon::Stop, "Stop", p.accent).clicked() {
@@ -287,7 +310,7 @@ impl TasksScreen {
     }
 
     /// The row's icons, shown on hover: delete, edit, add a sub-task.
-    fn row_icons(&self, ui: &mut Ui, task: &Task, action: &mut Option<Action>) {
+    fn row_icons(&self, ui: &mut Ui, task: &Task, depth: usize, action: &mut Option<Action>) {
         let p = palette(ui);
         let id = task.meta.id;
         let top_level = task.parent_id.is_none();
@@ -303,7 +326,8 @@ impl TasksScreen {
                 top_level,
             }));
         }
-        if top_level && icon_button(ui, Icon::Plus, "Add sub-task", p.secondary).clicked() {
+        let can_nest = depth + 1 < MAX_DEPTH;
+        if can_nest && icon_button(ui, Icon::Plus, "Add sub-task", p.secondary).clicked() {
             *action = Some(Action::OpenSubtask(id));
         }
     }
@@ -483,4 +507,12 @@ fn category_picker(
         })
         .response
         .accessible_name("Category");
+}
+
+/// Today's time on a task plus everything below it.
+fn family_time(all: &[Task], id: Id, own: &dyn Fn(Id) -> SignedDuration) -> SignedDuration {
+    all.iter()
+        .filter(|t| t.parent_id == Some(id))
+        .map(|t| family_time(all, t.meta.id, own))
+        .fold(own(id), SignedDuration::saturating_add)
 }

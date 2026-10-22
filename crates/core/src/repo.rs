@@ -3,7 +3,7 @@
 
 use jiff::Timestamp;
 
-use crate::task::clean_title;
+use crate::task::{MAX_DEPTH, clean_title};
 use jiff::SignedDuration;
 
 use crate::{
@@ -69,28 +69,41 @@ pub trait TaskRepo {
     fn subtasks(&self, id: Id) -> RepoResult<Vec<Task>>;
     fn insert(&self, parent_id: Option<Id>, title: &str, category_id: Id) -> RepoResult<Task>;
     fn write_title(&self, id: Id, title: &str) -> RepoResult<()>;
-    /// Sets the category of a task and all its sub-tasks.
+    /// Sets the category of a task and every task below it.
     fn write_category(&self, id: Id, category_id: Id) -> RepoResult<()>;
     /// Ticking keeps an existing `done_at`; unticking clears it.
     fn write_done(&self, id: Id, done: bool) -> RepoResult<()>;
     fn write_break_interval(&self, id: Id, minutes: Option<u32>) -> RepoResult<()>;
-    /// Soft-deletes a task and its sub-tasks.
+    /// Soft-deletes a task and every task below it.
     fn remove(&self, id: Id) -> RepoResult<()>;
 
-    /// Adds a task. A sub-task takes its parent's category, can't be nested
-    /// further, and reopens a done parent.
+    /// The tasks above `id`, nearest first.
+    fn ancestors(&self, id: Id) -> RepoResult<Vec<Task>> {
+        let mut chain = Vec::new();
+        let mut next = self.get(id)?.parent_id;
+        while let Some(parent_id) = next {
+            let parent = self.get(parent_id)?;
+            next = parent.parent_id;
+            chain.push(parent);
+        }
+        Ok(chain)
+    }
+
+    /// Adds a task. A sub-task takes its top-level task's category, nests at
+    /// most [`MAX_DEPTH`] levels, and reopens any done task above it.
     fn add(&self, title: &str, placement: Placement) -> RepoResult<Task> {
         let title = clean_title(title)?;
         match placement {
             Placement::TopLevel { category_id } => self.insert(None, &title, category_id),
             Placement::Under(parent_id) => {
                 let parent = self.get(parent_id)?;
-                if parent.parent_id.is_some() {
-                    return Err(RepoError::Invalid("a sub-task can't have sub-tasks"));
+                let above = self.ancestors(parent_id)?;
+                if above.len() + 1 >= MAX_DEPTH {
+                    return Err(RepoError::Invalid("tasks nest at most three levels"));
                 }
                 let task = self.insert(Some(parent_id), &title, parent.category_id)?;
-                if parent.is_done() {
-                    self.write_done(parent_id, false)?;
+                for done in std::iter::once(parent).chain(above).filter(Task::is_done) {
+                    self.write_done(done.meta.id, false)?;
                 }
                 Ok(task)
             }
@@ -101,11 +114,11 @@ pub trait TaskRepo {
         self.write_title(id, &clean_title(title)?)
     }
 
-    /// Changes a top-level task's category; its sub-tasks follow.
+    /// Changes a top-level task's category; every task below follows.
     fn set_category(&self, id: Id, category_id: Id) -> RepoResult<()> {
         if self.get(id)?.parent_id.is_some() {
             return Err(RepoError::Invalid(
-                "a sub-task always has its parent's category",
+                "a sub-task always has its top-level task's category",
             ));
         }
         self.write_category(id, category_id)
@@ -115,7 +128,7 @@ pub trait TaskRepo {
     fn set_break_interval(&self, id: Id, minutes: Option<u32>) -> RepoResult<()> {
         if self.get(id)?.parent_id.is_some() {
             return Err(RepoError::Invalid(
-                "a sub-task uses its parent's break interval",
+                "a sub-task uses its top-level task's break interval",
             ));
         }
         if minutes == Some(0) {
@@ -126,49 +139,69 @@ pub trait TaskRepo {
         self.write_break_interval(id, minutes)
     }
 
-    /// The break interval a running task uses: its own, else its parent's.
+    /// The break interval a running task uses: its own, else the nearest one
+    /// above it.
     fn break_interval_for(&self, id: Id) -> RepoResult<Option<u32>> {
         let task = self.get(id)?;
-        match (task.break_interval_min, task.parent_id) {
-            (Some(own), _) => Ok(Some(own)),
-            (None, Some(parent)) => Ok(self.get(parent)?.break_interval_min),
-            (None, None) => Ok(None),
+        if task.break_interval_min.is_some() {
+            return Ok(task.break_interval_min);
         }
+        Ok(self
+            .ancestors(id)?
+            .into_iter()
+            .find_map(|t| t.break_interval_min))
     }
 
-    /// Ticks or unticks a task. Ticking a parent's last open sub-task ticks
-    /// the parent; unticking a sub-task reopens it. Ticking a parent by hand
-    /// leaves its sub-tasks alone.
+    /// Ticks or unticks a task. Ticking the last open sub-task ticks its
+    /// parent, and so on up; unticking reopens every done task above.
+    /// Ticking a parent by hand leaves its sub-tasks alone.
     fn set_done(&self, id: Id, done: bool) -> RepoResult<()> {
         self.write_done(id, done)?;
-        let Some(parent_id) = self.get(id)?.parent_id else {
-            return Ok(());
-        };
         if done {
-            self.finish_parent_if_complete(parent_id)
-        } else {
-            self.write_done(parent_id, false)
+            return self.finish_chain_above(id);
         }
+        for above in self.ancestors(id)?.into_iter().filter(Task::is_done) {
+            self.write_done(above.meta.id, false)?;
+        }
+        Ok(())
     }
 
-    /// Soft-deletes a task and its sub-tasks. Deleting a parent's last open
-    /// sub-task leaves only done ones, so the parent is ticked.
+    /// Soft-deletes a task and everything below it. Deleting the last open
+    /// sub-task can leave only done ones, which completes the tasks above.
     fn delete(&self, id: Id) -> RepoResult<()> {
         let parent_id = self.get(id)?.parent_id;
         self.remove(id)?;
         match parent_id {
-            Some(parent_id) => self.finish_parent_if_complete(parent_id),
+            Some(parent_id) => {
+                if self.finish_parent_if_complete(parent_id)? {
+                    self.finish_chain_above(parent_id)?;
+                }
+                Ok(())
+            }
             None => Ok(()),
         }
     }
 
-    /// Ticks a parent whose sub-tasks (at least one) are all done.
-    fn finish_parent_if_complete(&self, parent_id: Id) -> RepoResult<()> {
-        let subtasks = self.subtasks(parent_id)?;
-        if !subtasks.is_empty() && subtasks.iter().all(Task::is_done) {
-            self.write_done(parent_id, true)?;
+    /// Walks up from `id`, ticking each parent whose sub-tasks are all done,
+    /// and stops at the first that isn't complete.
+    fn finish_chain_above(&self, id: Id) -> RepoResult<()> {
+        for above in self.ancestors(id)? {
+            if !self.finish_parent_if_complete(above.meta.id)? {
+                break;
+            }
         }
         Ok(())
+    }
+
+    /// Ticks a parent whose sub-tasks (at least one) are all done. Returns
+    /// whether it is now complete.
+    fn finish_parent_if_complete(&self, parent_id: Id) -> RepoResult<bool> {
+        let subtasks = self.subtasks(parent_id)?;
+        let complete = !subtasks.is_empty() && subtasks.iter().all(Task::is_done);
+        if complete {
+            self.write_done(parent_id, true)?;
+        }
+        Ok(complete)
     }
 }
 

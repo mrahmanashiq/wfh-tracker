@@ -88,13 +88,15 @@ fn subtasks_take_their_parents_category() {
 }
 
 #[test]
-fn a_subtask_cannot_have_subtasks() {
+fn tasks_nest_three_levels_but_not_four() {
     let w = world();
     let checkout = w.top("Checkout");
     let api = w.sub("API", &checkout);
+    let auth = w.sub("Auth header", &api);
 
-    let result = w.store.add("Too deep", Placement::Under(api.meta.id));
-
+    assert_eq!(auth.parent_id, Some(api.meta.id));
+    assert_eq!(auth.category_id, checkout.category_id);
+    let result = w.store.add("Too deep", Placement::Under(auth.meta.id));
     assert!(matches!(result, Err(RepoError::Invalid(_))));
 }
 
@@ -266,4 +268,75 @@ fn ticking_one_subtask_keeps_a_parent_that_was_ticked_by_hand() {
     w.store.set_done(validation.meta.id, true).unwrap();
 
     assert!(w.get(&checkout).is_done());
+}
+
+#[test]
+fn ticking_the_last_open_grandchild_completes_the_whole_chain() {
+    let w = world();
+    let checkout = w.top("Checkout");
+    let api = w.sub("API", &checkout);
+    let auth = w.sub("Auth header", &api);
+
+    w.store.set_done(auth.meta.id, true).unwrap();
+
+    assert!(w.get(&api).is_done());
+    assert!(w.get(&checkout).is_done());
+}
+
+#[test]
+fn unticking_a_grandchild_reopens_its_parent_and_grandparent() {
+    let w = world();
+    let checkout = w.top("Checkout");
+    let api = w.sub("API", &checkout);
+    let auth = w.sub("Auth header", &api);
+    w.store.set_done(auth.meta.id, true).unwrap();
+    assert!(w.get(&checkout).is_done());
+
+    w.store.set_done(auth.meta.id, false).unwrap();
+
+    assert!(!w.get(&api).is_done());
+    assert!(!w.get(&checkout).is_done());
+}
+
+#[test]
+fn adding_a_grandchild_reopens_the_done_chain_above_it() {
+    let w = world();
+    let checkout = w.top("Checkout");
+    let api = w.sub("API", &checkout);
+    w.store.set_done(api.meta.id, true).unwrap();
+    assert!(w.get(&checkout).is_done());
+
+    w.sub("Retry logic", &api);
+
+    assert!(!w.get(&api).is_done());
+    assert!(!w.get(&checkout).is_done());
+}
+
+#[test]
+fn category_changes_and_deletes_reach_the_grandchildren() {
+    let w = world();
+    let checkout = w.top("Checkout");
+    let api = w.sub("API", &checkout);
+    let auth = w.sub("Auth header", &api);
+
+    w.store
+        .set_category(checkout.meta.id, w.learning.meta.id)
+        .unwrap();
+    assert_eq!(w.get(&auth).category_id, w.learning.meta.id);
+
+    TaskRepo::delete(&w.store, checkout.meta.id).unwrap();
+    assert!(w.store.list_live().unwrap().is_empty());
+}
+
+#[test]
+fn a_grandchild_uses_the_break_interval_of_the_nearest_task_above_with_one() {
+    let w = world();
+    let checkout = w.top("Checkout");
+    let api = w.sub("API", &checkout);
+    let auth = w.sub("Auth header", &api);
+    w.store
+        .set_break_interval(checkout.meta.id, Some(50))
+        .unwrap();
+
+    assert_eq!(w.store.break_interval_for(auth.meta.id).unwrap(), Some(50));
 }
