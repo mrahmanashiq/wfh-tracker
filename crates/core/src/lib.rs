@@ -9,6 +9,7 @@ pub mod block;
 pub mod category;
 pub mod clipboard;
 pub mod clock;
+pub mod dashboard;
 pub mod distraction_event;
 pub mod distraction_rule;
 pub mod id;
@@ -28,6 +29,10 @@ pub use block::{Block, BlockDraft, Weekdays, active_block, clock_text};
 pub use category::{Category, CategoryKind, NewCategory, ParseError, Rgb};
 pub use clipboard::{Clipboard, ClipboardError};
 pub use clock::{Clock, FixedClock};
+pub use dashboard::{
+    CategoryTime, DayOffice, DistractionTotals, RuleTime, TimelineSegment, category_totals,
+    day_timeline, distraction_totals, kind_time, office_by_day, timeline_window,
+};
 pub use distraction_event::{DistractionEvent, WatchContext};
 pub use distraction_rule::{DistractionRule, MatchOn, RuleDraft};
 pub use id::Id;

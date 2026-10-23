@@ -97,6 +97,7 @@ pub enum Icon {
     Forward,
     Target,
     Focus,
+    Chart,
 }
 
 impl Icon {
@@ -184,6 +185,14 @@ impl Icon {
                 for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
                     let d = vec2(dx, dy);
                     painter.line_segment([c + d * 6.0, c + d * 8.0], s);
+                }
+            }
+            Icon::Chart => {
+                // Three bars of rising height on a baseline.
+                for (dx, h) in [(-4.5, 5.0), (0.0, 9.0), (4.5, 12.0)] {
+                    let bar =
+                        Rect::from_min_max(c + vec2(dx - 1.6, 6.0 - h), c + vec2(dx + 1.6, 6.0));
+                    painter.rect_filled(bar, CornerRadius::same(1), color);
                 }
             }
             Icon::Plus => {

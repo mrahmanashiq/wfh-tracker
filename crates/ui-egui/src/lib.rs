@@ -2,6 +2,7 @@
 //! through the traits in `wt-core`, so the UI can be replaced on its own.
 
 mod categories_screen;
+mod dashboard_screen;
 mod focus_screen;
 mod nudges;
 mod planning_screen;
@@ -27,6 +28,7 @@ use wt_core::{
 use crate::widgets::Icon;
 
 pub use categories_screen::CategoriesScreen;
+pub use dashboard_screen::DashboardScreen;
 pub use focus_screen::FocusScreen;
 pub use nudges::Nudges;
 pub use planning_screen::PlanningScreen;
@@ -54,6 +56,16 @@ impl<T: SessionRepo + BlockRepo + DistractionRuleRepo + DistractionEventRepo> Nu
 /// What the reports need: sessions, tasks, categories and distractions.
 pub trait ReportStore: SessionRepo + DistractionRuleRepo + DistractionEventRepo {}
 impl<T: SessionRepo + DistractionRuleRepo + DistractionEventRepo> ReportStore for T {}
+
+/// What the dashboard needs: sessions, tasks, categories, targets and distractions.
+pub trait DashboardStore:
+    SessionRepo + wt_core::TargetRepo + DistractionRuleRepo + DistractionEventRepo
+{
+}
+impl<T: SessionRepo + wt_core::TargetRepo + DistractionRuleRepo + DistractionEventRepo>
+    DashboardStore for T
+{
+}
 
 /// What the planning screen needs: sessions (for progress), targets, blocks.
 pub trait PlanStore: SessionRepo + wt_core::TargetRepo + wt_core::BlockRepo {}
@@ -112,6 +124,7 @@ pub struct WfhApp<S> {
     screen: Screen,
     status: StatusBar,
     tasks: TasksScreen,
+    dashboard: DashboardScreen,
     categories: CategoriesScreen,
     reports: ReportsScreen,
     planning: PlanningScreen,
@@ -125,6 +138,7 @@ pub struct WfhApp<S> {
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Screen {
     Tasks,
+    Dashboard,
     Planning,
     Focus,
     Reports,
@@ -186,6 +200,7 @@ impl<S: Store> WfhApp<S> {
             screen: Screen::Tasks,
             status: StatusBar::default(),
             tasks: TasksScreen::default(),
+            dashboard: DashboardScreen,
             categories: CategoriesScreen::default(),
             reports: ReportsScreen::default(),
             planning: PlanningScreen::default(),
@@ -303,6 +318,10 @@ impl<S: Store> eframe::App for WfhApp<S> {
             )
             .show(ui, |ui| match self.screen {
                 Screen::Tasks => self.tasks.ui(ui, &self.store, self.clock.as_ref()),
+                Screen::Dashboard => {
+                    self.dashboard
+                        .ui(ui, &self.store, &settings, self.clock.as_ref());
+                }
                 Screen::Planning => {
                     self.planning
                         .ui(ui, &self.store, &settings, self.clock.as_ref());
@@ -327,7 +346,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
 }
 
 impl<S: Store> WfhApp<S> {
-    /// Things-style navigation: Today with its open count, Categories,
+    /// Things-style navigation: Today with its open count, Dashboard, Categories,
     /// Settings, then the quick-start list.
     fn sidebar(&mut self, ui: &mut egui::Ui) {
         let p = theme::palette(ui);
@@ -343,6 +362,7 @@ impl<S: Store> WfhApp<S> {
             .unwrap_or(0);
         let items = [
             (Screen::Tasks, Icon::Star, p.star, "Today", Some(open)),
+            (Screen::Dashboard, Icon::Chart, p.accent, "Dashboard", None),
             (Screen::Planning, Icon::Target, p.accent, "Planning", None),
             (Screen::Focus, Icon::Focus, p.accent, "Focus", None),
             (Screen::Reports, Icon::Doc, p.accent, "Reports", None),
