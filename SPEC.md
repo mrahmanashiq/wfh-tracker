@@ -199,7 +199,7 @@ Every rule in the *Domain rules* table has at least one unit test. Bugs get a fa
 7. Target progress for "Learning 5h/week" is correct across week boundaries (Sunday start). On Fri/Sat there's no 8h reminder, and any office time counts as overtime.
 8. Closing the window keeps the app in the tray, and reminders still fire. With autostart on, the app starts minimized to the tray at Windows login.
 9. `cargo xtask ci` passes on Windows. The macOS build compiles (no Mac-specific features required in v1).
-10. A distraction during an office session nudges you and is recorded with context `office`. The office report shows the distraction minutes as a separate line, for you only. It isn't included in the copied text unless you turn that on.
+10. A distraction during an office session nudges you and is recorded with context `office`. The office report shows the distraction minutes as a separate line, for you only. It isn't included in the copied text unless you turn that on. *(Changed 2026-10-23: distraction minutes are in the private My time report instead, and the office report is unchanged. See [SPEC-nudges.md](SPEC-nudges.md).)*
 
 ## Decisions (2026-10-21)
 
