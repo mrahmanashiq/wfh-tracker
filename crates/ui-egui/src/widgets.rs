@@ -7,9 +7,23 @@ use egui::{
     Button, Color32, CornerRadius, Painter, Pos2, Rect, Response, RichText, Role, Sense, Shape,
     Stroke, Ui, WidgetInfo, pos2, vec2,
 };
-use wt_core::Rgb;
+use jiff::SignedDuration;
+use jiff::civil::Weekday;
+use wt_core::{Rgb, hours_text};
 
 use crate::theme::palette;
+
+const DAY_NAMES: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/// `Mon`
+pub fn day_name(day: Weekday) -> &'static str {
+    DAY_NAMES[day.to_sunday_zero_offset() as usize]
+}
+
+/// `3h 20m / 5h`: time against a target of whole hours.
+pub fn target_progress_text(done: SignedDuration, target_minutes: u32) -> String {
+    format!("{} / {}h", hours_text(done), target_minutes / 60)
+}
 
 pub fn color32(c: Rgb) -> Color32 {
     Color32::from_rgb(c.0, c.1, c.2)
@@ -20,6 +34,17 @@ pub fn color_dot(ui: &mut Ui, color: Rgb) {
     let (rect, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
     ui.painter()
         .circle_filled(rect.center(), 4.5, color32(color));
+}
+
+/// A thin bar `width` wide, filled to `share` (clamped to 0..=1).
+pub fn progress_bar(ui: &mut Ui, width: f32, share: f32, color: Color32) {
+    let p = palette(ui);
+    let (rect, _) = ui.allocate_exact_size(vec2(width, 6.0), Sense::hover());
+    let rounding = CornerRadius::same(3);
+    ui.painter().rect_filled(rect, rounding, p.hover);
+    let mut done = rect;
+    done.set_width(rect.width() * share.clamp(0.0, 1.0));
+    ui.painter().rect_filled(done, rounding, color);
 }
 
 /// Shows the result of the last action in the theme's danger colour.

@@ -46,7 +46,9 @@ pub use repo::{
     BlockRepo, CategoryRepo, DistractionEventRepo, DistractionRuleRepo, Meta, RepoError,
     SessionRepo, SettingsRepo, TargetRepo, TaskRepo,
 };
-pub use reports::{ReportInput, duration_text, my_time_report, office_report};
+pub use reports::{
+    ReportInput, duration_text, hours_text, is_personal, my_time_report, office_report, target_text,
+};
 pub use session::{
     MeetingToggle, OfficeStatus, Session, Switch, TimerTarget, office_status, office_time,
     tracked_time,

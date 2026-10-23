@@ -1,5 +1,4 @@
-use egui::{ComboBox, CornerRadius, DragValue, RichText, Sense, TextEdit, Ui, vec2};
-use jiff::civil::Weekday;
+use egui::{ComboBox, DragValue, RichText, TextEdit, Ui};
 use wt_core::repo::RepoResult;
 use wt_core::{
     BlockDraft, Category, CategoryKind, Clock, Id, Period, Settings, Target, Weekdays, clock_text,
@@ -9,11 +8,9 @@ use wt_core::{
 use crate::PlanStore;
 use crate::theme::palette;
 use crate::widgets::{
-    DeleteClick, Icon, color_dot, color32, delete_buttons, icon_button, message, pill,
-    screen_title, section_label,
+    DeleteClick, Icon, color_dot, color32, day_name, delete_buttons, icon_button, message, pill,
+    progress_bar, screen_title, section_label, target_progress_text,
 };
-
-const DAY_NAMES: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /// Targets ("Learning: 5h this week") and scheduled blocks.
 #[derive(Default)]
@@ -103,16 +100,16 @@ impl PlanningScreen {
                 let met = done >= goal;
                 progress_bar(
                     ui,
+                    120.0,
                     done.as_mins() as f32 / goal.as_mins().max(1) as f32,
                     if met { p.success } else { p.accent },
                 );
                 ui.label(
-                    RichText::new(format!(
-                        "{} / {}h",
-                        hours_minutes(done),
-                        target.minutes / 60
-                    ))
-                    .color(if met { p.success } else { p.secondary }),
+                    RichText::new(target_progress_text(done, target.minutes)).color(if met {
+                        p.success
+                    } else {
+                        p.secondary
+                    }),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let id = target.meta.id;
@@ -331,16 +328,6 @@ fn period_label(period: Period) -> &'static str {
     }
 }
 
-fn day_name(day: Weekday) -> &'static str {
-    DAY_NAMES[day.to_sunday_zero_offset() as usize]
-}
-
-/// `3h 20m`
-fn hours_minutes(d: jiff::SignedDuration) -> String {
-    let m = d.as_mins().max(0);
-    format!("{}h {:02}m", m / 60, m % 60)
-}
-
 /// A time of day as `HH:MM`, dragged in 15-minute steps or typed.
 fn time_field(ui: &mut Ui, minutes: &mut u16, name: &str) {
     ui.add(
@@ -356,16 +343,6 @@ fn time_field(ui: &mut Ui, minutes: &mut u16, name: &str) {
             }),
     )
     .accessible_name(name);
-}
-
-fn progress_bar(ui: &mut Ui, share: f32, color: egui::Color32) {
-    let p = palette(ui);
-    let (rect, _) = ui.allocate_exact_size(vec2(120.0, 6.0), Sense::hover());
-    let rounding = CornerRadius::same(3);
-    ui.painter().rect_filled(rect, rounding, p.hover);
-    let mut done = rect;
-    done.set_width(rect.width() * share.clamp(0.0, 1.0));
-    ui.painter().rect_filled(done, rounding, color);
 }
 
 fn category_picker(ui: &mut Ui, id_salt: &str, cats: &[Category], selected: &mut Id) {

@@ -53,7 +53,7 @@ pub fn duration_text(d: SignedDuration) -> String {
 }
 
 /// `7h 45m`: always hours and minutes, for totals.
-fn hours_text(d: SignedDuration) -> String {
+pub fn hours_text(d: SignedDuration) -> String {
     let m = d.as_mins().max(0);
     format!("{}h {:02}m", m / 60, m % 60)
 }
@@ -226,7 +226,8 @@ fn distractions_section(input: &ReportInput<'_>) -> Option<String> {
     Some(section("Distractions", total, lines))
 }
 
-fn is_personal(kind: CategoryKind) -> bool {
+/// Personal time: `personal` and `custom` sessions (the My time grouping).
+pub fn is_personal(kind: CategoryKind) -> bool {
     matches!(kind, CategoryKind::Personal | CategoryKind::Custom)
 }
 
@@ -236,7 +237,8 @@ fn section(title: &str, total: SignedDuration, lines: Vec<String>) -> String {
     out.join("\n")
 }
 
-fn target_text(minutes: u32) -> String {
+/// `8h`, or `7h 30m` when the target isn't whole hours.
+pub fn target_text(minutes: u32) -> String {
     match minutes % 60 {
         0 => format!("{}h", minutes / 60),
         m => format!("{}h {m:02}m", minutes / 60),

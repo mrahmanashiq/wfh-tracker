@@ -35,7 +35,7 @@ One screen that answers "how is my day and my week going?" at a glance: today's 
 - **`wt-core` `dashboard.rs`** (pure functions, no new aggregate):
   - `day_timeline(sessions, day, tz, now) -> Vec<TimelineSegment>` and `timeline_window(segments) -> (u16, u16)` (local minutes).
   - `office_by_day(sessions, week_first_day, tz, now, settings) -> Vec<DayOffice>` (7 days, with the day's target or `None` on a day off, and its overtime).
-  - `category_totals(sessions, from, to, tz, now) -> Vec<CategoryTime>` over local dates `[from, to)`.
+  - `category_totals(sessions, targets, from, to, tz, now) -> Vec<CategoryTime>` over local dates `[from, to)`; categories of `targets` with no time come last.
   - `distraction_totals(events, rules, from, to, tz, now) -> DistractionTotals`.
   - `kind_time(sessions, day, tz, now, keep)` for the learning and personal cards.
 - **`wt-ui-egui` `dashboard_screen.rs`:** `DashboardScreen`, painted with egui's painter (no new dependencies). Every painted mark is a hoverable widget with an accessible name. Colours come from the theme palette and the category colours.
@@ -59,3 +59,4 @@ One screen that answers "how is my day and my week going?" at a glance: today's 
 - The sidebar item uses a new painted `Chart` icon. Card values are painted text in the proportional font (the semibold family is only installed by the app, not in tests).
 - The timeline marks are `hover` widgets with a tooltip; the weekday bars carry the same name as their tooltip. Category and distraction rows are plain labels beside a painted bar.
 - A category's bar fills against its weekly target (green once met); without a target it is scaled to the week's longest category.
+- The Office card's accessible name includes its note (`Office 9h 30m / 8h - 30m overtime`). On a day off with office time the note and a full bar are in the danger colour, as all of it is overtime. A day-off weekday bar paints "day off" under its time.

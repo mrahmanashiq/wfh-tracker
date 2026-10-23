@@ -1,12 +1,13 @@
 #![allow(clippy::unwrap_used)] // test code may unwrap (SPEC: Code Style)
 
+use jiff::civil::Weekday;
 use jiff::civil::date;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use wt_core::{
     CategoryKind, CategoryTime, DayOffice, DistractionEvent, DistractionRule, Id, MatchOn, Meta,
-    RuleTime, Session, Settings, TimelineSegment, WatchContext, category_totals, day_timeline,
-    distraction_totals, kind_time, office_by_day, timeline_window,
+    Period, RuleTime, Session, Settings, Target, TimelineSegment, WatchContext, category_totals,
+    day_timeline, distraction_totals, kind_time, office_by_day, period_range, timeline_window,
 };
 
 // 2026-10-22 is a Thursday. The week from Sunday 18 Oct runs to Sat 24 Oct.
@@ -77,7 +78,7 @@ fn the_timeline_has_one_segment_per_session_clipped_to_the_day() {
     let now = ts("2026-10-22T03:10:45Z");
 
     let thursday = day_timeline(&sessions, date(2026, 10, 22), &TimeZone::UTC, now);
-    let segment = |kind, from_min, to_min, running| TimelineSegment {
+    let segment = |kind, from_min, to_min| TimelineSegment {
         task_id: if kind == CategoryKind::Break {
             None
         } else {
@@ -89,23 +90,22 @@ fn the_timeline_has_one_segment_per_session_clipped_to_the_day() {
             office
         },
         kind,
-        running,
         from_min,
         to_min,
     };
     assert_eq!(
         thursday,
         vec![
-            segment(CategoryKind::Office, 0, 90, false),
-            segment(CategoryKind::Break, 90, 95, false),
-            segment(CategoryKind::Office, 95, 190, true),
+            segment(CategoryKind::Office, 0, 90),
+            segment(CategoryKind::Break, 90, 95),
+            segment(CategoryKind::Office, 95, 190),
         ]
     );
 
     let wednesday = day_timeline(&sessions, date(2026, 10, 21), &TimeZone::UTC, now);
     assert_eq!(
         wednesday,
-        vec![segment(CategoryKind::Office, 23 * 60, 24 * 60, false)]
+        vec![segment(CategoryKind::Office, 23 * 60, 24 * 60)]
     );
 }
 
@@ -115,7 +115,6 @@ fn the_timeline_window_covers_the_tracked_hours_and_at_least_eight() {
         task_id: None,
         category_id: Id::new(),
         kind: CategoryKind::Office,
-        running: false,
         from_min,
         to_min,
     };
@@ -255,6 +254,7 @@ fn category_totals_count_the_range_only_without_breaks_most_first() {
 
     let totals = category_totals(
         &sessions,
+        &[],
         date(2026, 10, 18),
         date(2026, 10, 25),
         &TimeZone::UTC,
@@ -269,6 +269,135 @@ fn category_totals_count_the_range_only_without_breaks_most_first() {
         totals,
         vec![time(office, 210), time(learning, 140), time(family, 60)]
     );
+}
+
+#[test]
+fn categories_with_a_target_and_no_time_come_last() {
+    let (office, learning, family, reading) = (Id::new(), Id::new(), Id::new(), Id::new());
+    let target = |category_id| Target {
+        meta: meta(),
+        category_id,
+        period: Period::Week,
+        minutes: 5 * 60,
+    };
+    let sessions = [
+        session(
+            None,
+            learning,
+            CategoryKind::Learning,
+            "2026-10-20T19:00:00Z",
+            Some("2026-10-20T19:30:00Z"),
+        ),
+        session(
+            None,
+            office,
+            CategoryKind::Office,
+            "2026-10-22T02:00:00Z",
+            Some("2026-10-22T05:00:00Z"),
+        ),
+    ];
+
+    let totals = category_totals(
+        &sessions,
+        &[target(reading), target(learning), target(family)],
+        date(2026, 10, 18),
+        date(2026, 10, 25),
+        &TimeZone::UTC,
+        ts("2026-10-22T05:30:00Z"),
+    );
+
+    let time = |category_id, m| CategoryTime {
+        category_id,
+        time: mins(m),
+    };
+    assert_eq!(
+        totals,
+        vec![
+            time(office, 180),
+            time(learning, 30),
+            time(reading, 0),
+            time(family, 0),
+        ]
+    );
+}
+
+#[test]
+fn a_week_can_start_on_monday_and_counts_only_its_part_of_an_earlier_session() {
+    let office = Id::new();
+    let sessions = [
+        // Sunday 23:00 to Monday 01:00: only Monday's hour is in the week.
+        session(
+            None,
+            office,
+            CategoryKind::Office,
+            "2026-10-18T23:00:00Z",
+            Some("2026-10-19T01:00:00Z"),
+        ),
+        // Sunday 25 Oct, the week's last day and a workday.
+        session(
+            None,
+            office,
+            CategoryKind::Office,
+            "2026-10-25T03:00:00Z",
+            Some("2026-10-25T05:00:00Z"),
+        ),
+    ];
+    let settings = Settings {
+        week_start: Weekday::Monday,
+        ..Settings::default()
+    };
+    let (first, after) = period_range(date(2026, 10, 22), Period::Week, settings.week_start);
+    assert_eq!((first, after), (date(2026, 10, 19), date(2026, 10, 26)));
+    let now = ts("2026-10-26T00:00:00Z");
+
+    let week = office_by_day(&sessions, first, &TimeZone::UTC, now, &settings);
+
+    let dates: Vec<_> = week.iter().map(|d| d.date).collect();
+    assert_eq!(
+        dates,
+        (19..=25).map(|d| date(2026, 10, d)).collect::<Vec<_>>()
+    );
+    assert_eq!(week[0].office, mins(60));
+    assert_eq!(week[6].office, mins(120));
+    assert_eq!(week[6].target, Some(mins(480)));
+    assert_eq!(week[4].target, None, "Friday is a day off");
+
+    let totals = category_totals(&sessions, &[], first, after, &TimeZone::UTC, now);
+    assert_eq!(
+        totals,
+        vec![CategoryTime {
+            category_id: office,
+            time: mins(180),
+        }]
+    );
+}
+
+#[test]
+fn a_distraction_from_before_the_week_counts_only_inside_it() {
+    let rule = DistractionRule {
+        meta: meta(),
+        pattern: "Reels".to_owned(),
+        match_on: MatchOn::Title,
+        enabled: true,
+    };
+    let events = [DistractionEvent {
+        meta: meta(),
+        rule_id: rule.meta.id,
+        context: WatchContext::Learning,
+        started_at: ts("2026-10-17T23:50:00Z"),
+        ended_at: Some(ts("2026-10-18T00:20:00Z")),
+    }];
+
+    let totals = distraction_totals(
+        &events,
+        &[rule],
+        date(2026, 10, 18),
+        date(2026, 10, 25),
+        &TimeZone::UTC,
+        ts("2026-10-22T05:30:00Z"),
+    );
+
+    assert_eq!(totals.total, mins(20));
 }
 
 #[test]

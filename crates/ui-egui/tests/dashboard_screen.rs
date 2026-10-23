@@ -136,3 +136,31 @@ fn on_a_day_off_the_office_card_says_so() {
 
     h.get_by_label("Office 0h 00m - day off");
 }
+
+#[test]
+fn the_office_card_name_includes_the_overtime_note() {
+    let mut h = harness();
+    let checkout = h.state().store.list_live().unwrap()[0].meta.id;
+
+    // 1h 30m before, then 8h more: 30 minutes past the 9h ceiling.
+    h.state().store.start(TimerTarget::Task(checkout)).unwrap();
+    h.state().clock.advance(SignedDuration::from_hours(8));
+    h.run();
+
+    h.get_by_label("Office 9h 30m / 8h - 30m overtime");
+}
+
+#[test]
+fn office_time_on_a_day_off_is_named_as_a_day_off() {
+    let mut h = harness();
+    let checkout = h.state().store.list_live().unwrap()[0].meta.id;
+
+    // Friday 11:00 to 13:00.
+    h.state().clock.advance(SignedDuration::from_hours(24));
+    h.state().store.start(TimerTarget::Task(checkout)).unwrap();
+    h.state().clock.advance(SignedDuration::from_hours(2));
+    h.run();
+
+    h.get_by_label("Office 2h 00m - day off");
+    h.get_by_label("Fri 2h 00m - day off");
+}

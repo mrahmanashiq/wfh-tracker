@@ -64,7 +64,7 @@ pub(crate) fn span_within(
 }
 
 /// Start of `day` and of the next day, as instants in `tz`.
-fn day_bounds(day: Date, tz: &TimeZone) -> Option<(Timestamp, Timestamp)> {
+pub(crate) fn day_bounds(day: Date, tz: &TimeZone) -> Option<(Timestamp, Timestamp)> {
     let start = day.to_zoned(tz.clone()).ok()?.timestamp();
     let end = day.tomorrow().ok()?.to_zoned(tz.clone()).ok()?.timestamp();
     Some((start, end))

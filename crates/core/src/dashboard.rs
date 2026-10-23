@@ -6,8 +6,9 @@ use jiff::civil::Date;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp, ToSpan};
 
+use crate::session::{day_bounds, span_within};
 use crate::{
-    CategoryKind, DistractionEvent, DistractionRule, Id, OfficeStatus, Session, Settings,
+    CategoryKind, DistractionEvent, DistractionRule, Id, OfficeStatus, Session, Settings, Target,
     office_status, office_time,
 };
 
@@ -23,8 +24,6 @@ pub struct TimelineSegment {
     pub task_id: Option<Id>,
     pub category_id: Id,
     pub kind: CategoryKind,
-    /// Still running (it ends at "now").
-    pub running: bool,
     /// Local clock minutes after midnight, minutes floored; `1440` is midnight
     /// at the end of the day.
     pub from_min: u16,
@@ -39,7 +38,7 @@ pub fn day_timeline(
     tz: &TimeZone,
     now: Timestamp,
 ) -> Vec<TimelineSegment> {
-    let Some((day_start, day_end)) = local_range(day, day.tomorrow().ok(), tz) else {
+    let Some((day_start, day_end)) = day_bounds(day, tz) else {
         return Vec::new();
     };
     let minute = |at: Timestamp| {
@@ -59,7 +58,6 @@ pub fn day_timeline(
                 task_id: s.task_id,
                 category_id: s.category_id,
                 kind: s.kind,
-                running: s.is_running(),
                 from_min: minute(from),
                 to_min: minute(to),
             };
@@ -136,20 +134,19 @@ pub struct CategoryTime {
 }
 
 /// Time per category over the local dates `[from, to)`, breaks left out,
-/// most time first (ties in the order the categories were first tracked).
+/// most time first (ties in the order the categories were first tracked),
+/// then the categories of `targets` with no time yet, in target order.
 pub fn category_totals(
     sessions: &[Session],
+    targets: &[Target],
     from: Date,
     to: Date,
     tz: &TimeZone,
     now: Timestamp,
 ) -> Vec<CategoryTime> {
-    let Some((start, end)) = local_range(from, Some(to), tz) else {
-        return Vec::new();
-    };
     let mut totals: Vec<CategoryTime> = Vec::new();
     for s in sessions.iter().filter(|s| !s.is_break()) {
-        let time = overlap(s.started_at, s.end_or(now), start, end);
+        let time = span_over(s.started_at, s.end_or(now), from, to, tz);
         if !time.is_positive() {
             continue;
         }
@@ -162,6 +159,14 @@ pub fn category_totals(
         }
     }
     totals.sort_by_key(|t| std::cmp::Reverse(t.time));
+    for target in targets {
+        if !totals.iter().any(|t| t.category_id == target.category_id) {
+            totals.push(CategoryTime {
+                category_id: target.category_id,
+                time: SignedDuration::ZERO,
+            });
+        }
+    }
     totals
 }
 
@@ -205,16 +210,10 @@ pub fn distraction_totals(
     tz: &TimeZone,
     now: Timestamp,
 ) -> DistractionTotals {
-    let Some((start, end)) = local_range(from, Some(to), tz) else {
-        return DistractionTotals {
-            total: SignedDuration::ZERO,
-            rules: Vec::new(),
-        };
-    };
     let times: Vec<(Id, SignedDuration)> = events
         .iter()
         .map(|e| {
-            let time = overlap(e.started_at, e.ended_at.unwrap_or(now), start, end);
+            let time = span_over(e.started_at, e.ended_at.unwrap_or(now), from, to, tz);
             (e.rule_id, time)
         })
         .filter(|(_, t)| t.is_positive())
@@ -244,18 +243,16 @@ pub fn distraction_totals(
     }
 }
 
-/// The instants of local midnight at `from` and at `to` (default: `from`'s end).
-fn local_range(from: Date, to: Option<Date>, tz: &TimeZone) -> Option<(Timestamp, Timestamp)> {
-    let instant = |d: Date| d.to_zoned(tz.clone()).ok().map(|z| z.timestamp());
-    Some((instant(from)?, instant(to?)?))
-}
-
-/// How much of `[start, end)` falls within `[from, to)`.
-fn overlap(start: Timestamp, end: Timestamp, from: Timestamp, to: Timestamp) -> SignedDuration {
-    let (a, b) = (start.max(from), end.min(to));
-    if b > a {
-        b.duration_since(a)
-    } else {
-        SignedDuration::ZERO
-    }
+/// How much of `[start, end)` falls on the local dates `[from, to)`.
+fn span_over(
+    start: Timestamp,
+    end: Timestamp,
+    from: Date,
+    to: Date,
+    tz: &TimeZone,
+) -> SignedDuration {
+    from.series(1.day())
+        .take_while(|day| *day < to)
+        .map(|day| span_within(start, end, day, tz))
+        .fold(SignedDuration::ZERO, SignedDuration::saturating_add)
 }

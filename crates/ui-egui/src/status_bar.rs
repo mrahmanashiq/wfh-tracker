@@ -4,8 +4,8 @@ use wt_core::clock_text as time_of_day;
 use wt_core::repo::RepoResult;
 use wt_core::{
     Block, CategoryKind, Clock, MeetingToggle, Notice, Notifier, OfficeStatus, Reminders, Session,
-    SessionRepo, Settings, Tick, TimerTarget, active_block, office_status, office_time,
-    tracked_time,
+    SessionRepo, Settings, Tick, TimerTarget, active_block, hours_text, office_status, office_time,
+    target_text, tracked_time,
 };
 
 use crate::theme::palette;
@@ -323,20 +323,6 @@ fn two_days_before(now: Timestamp) -> Timestamp {
         .unwrap_or(now)
 }
 
-/// `1h 30m`
-fn hours_minutes(d: SignedDuration) -> String {
-    let m = d.as_mins().max(0);
-    format!("{}h {:02}m", m / 60, m % 60)
-}
-
-/// `8h`, or `7h 30m` when the target isn't whole hours.
-fn target_text(minutes: u32) -> String {
-    match minutes % 60 {
-        0 => format!("{}h", minutes / 60),
-        m => format!("{}h {m:02}m", minutes / 60),
-    }
-}
-
 /// `00:42:13`
 fn clock_text(d: SignedDuration) -> String {
     let s = d.as_secs().max(0);
@@ -348,7 +334,7 @@ fn office_text(
     settings: &Settings,
     weekday: jiff::civil::Weekday,
 ) -> String {
-    let worked = hours_minutes(office);
+    let worked = hours_text(office);
     if !settings.workdays.contains(&weekday) {
         return if office.is_positive() {
             format!("Office {worked} · day off, {worked} overtime")
