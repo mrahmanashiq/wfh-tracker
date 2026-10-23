@@ -1,7 +1,7 @@
 use wt_core::repo::RepoResult;
 use wt_core::{
-    Block, Category, CategoryKind, Clock, DistractionRepo, ForegroundWatcher, Notifier,
-    NudgeCommand, NudgeWatcher, Sample, Settings, WatchContext, watch_context,
+    Clock, DistractionEventRepo, ForegroundWatcher, Notifier, NudgeCommand, NudgeWatcher, Sample,
+    Settings, nudge_title, watch_context,
 };
 
 use crate::NudgeStore;
@@ -53,7 +53,7 @@ impl Nudges {
                     .find(|r| r.meta.id == rule)
                     .map_or("A distraction", |r| r.pattern.as_str());
                 notifier.notify(
-                    &nudge_title(name, context, &blocks, &categories, clock),
+                    &nudge_title(name, context, &blocks, &categories, now, &tz),
                     "Back to it?",
                 );
             }
@@ -61,40 +61,11 @@ impl Nudges {
         Ok(())
     }
 
-    /// The app is quitting: ends an open distraction now.
-    pub fn stop(&mut self, store: &dyn DistractionRepo, clock: &dyn Clock) -> RepoResult<()> {
-        for command in self.watcher.stop(clock.now()) {
+    /// The app is quitting: ends an open distraction when it was last seen.
+    pub fn stop(&mut self, store: &dyn DistractionEventRepo) -> RepoResult<()> {
+        for command in self.watcher.stop() {
             store.record(&command)?;
         }
         Ok(())
-    }
-}
-
-/// `Facebook during your Learning block`, `… during learning time` or
-/// `… during office time`.
-fn nudge_title(
-    name: &str,
-    context: WatchContext,
-    blocks: &[Block],
-    categories: &[Category],
-    clock: &dyn Clock,
-) -> String {
-    let category = |id| categories.iter().find(|c| c.meta.id == id);
-    let local = clock.now().to_zoned(clock.time_zone());
-    let learning_block = blocks
-        .iter()
-        .filter(|b| b.is_on(&local))
-        .filter(|b| category(b.category_id).is_some_and(|c| c.kind == CategoryKind::Learning))
-        .min_by_key(|b| b.start_min);
-    match (context, learning_block) {
-        (WatchContext::Learning, Some(block)) => {
-            let block_name = match (block.label.as_str(), category(block.category_id)) {
-                ("", Some(c)) => c.name.as_str(),
-                (label, _) => label,
-            };
-            format!("{name} during your {block_name} block")
-        }
-        (WatchContext::Learning, None) => format!("{name} during learning time"),
-        (WatchContext::Office, _) => format!("{name} during office time"),
     }
 }

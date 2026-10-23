@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use jiff::{SignedDuration, Timestamp};
 use wt_core::{
-    DistractionRepo, FixedClock, MatchOn, NudgeCommand, RepoError, RuleDraft, WatchContext,
+    DistractionEventRepo, DistractionRuleRepo, FixedClock, MatchOn, NudgeCommand, RepoError,
+    RuleDraft, WatchContext,
 };
 use wt_storage::SqliteStore;
 
@@ -42,6 +43,29 @@ fn the_default_rules_are_seeded_once_in_order() {
             ("Instagram".to_owned(), MatchOn::Title, true),
         ]
     );
+}
+
+#[test]
+fn rules_are_listed_oldest_first_then_by_id() {
+    let (store, clock) = store();
+    // Added in one instant: creation (id) order decides.
+    store
+        .add_rule(&RuleDraft::new("Facebook", MatchOn::Title))
+        .unwrap();
+    store
+        .add_rule(&RuleDraft::new("Reels", MatchOn::Title))
+        .unwrap();
+    // Added later, but with the clock set back: the older time wins over the id.
+    clock.advance(SignedDuration::from_secs(-60));
+    store
+        .add_rule(&RuleDraft::new("Shorts", MatchOn::Title))
+        .unwrap();
+
+    let rules = store.rules().unwrap();
+    let order: Vec<&str> = rules.iter().map(|r| r.pattern.as_str()).collect();
+    assert_eq!(order, ["Shorts", "Facebook", "Reels"]);
+    assert_eq!(rules[1].meta.created_at, rules[2].meta.created_at);
+    assert!(rules[1].meta.id < rules[2].meta.id);
 }
 
 #[test]

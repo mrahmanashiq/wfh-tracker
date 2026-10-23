@@ -8,7 +8,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use eframe::egui::{self, IconData, ViewportBuilder};
-use wt_core::DistractionRepo;
+use wt_core::DistractionRuleRepo;
 use wt_core::{Autostart, CategoryRepo, SettingsRepo};
 use wt_platform::{
     DesktopNotifier, LoginAutostart, MINIMIZED_FLAG, MeetingHotkey, OsForegroundWatcher,

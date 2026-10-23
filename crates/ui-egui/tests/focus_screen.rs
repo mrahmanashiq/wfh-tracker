@@ -5,7 +5,7 @@ use std::sync::Arc;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use jiff::Timestamp;
-use wt_core::{DistractionRepo, FixedClock, MatchOn};
+use wt_core::{DistractionRuleRepo, FixedClock, MatchOn};
 use wt_storage::SqliteStore;
 use wt_ui_egui::FocusScreen;
 

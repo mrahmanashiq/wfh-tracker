@@ -359,11 +359,10 @@ pub trait BlockRepo {
     }
 }
 
-/// Distraction rules and the events recorded for them. Backends implement
-/// the primitives; the provided methods validate, seed and carry out the
-/// watcher's commands. No window title ever reaches this trait.
-pub trait DistractionRepo {
-    /// Live rules, oldest first.
+/// Distraction rules. Backends implement the primitives; the provided
+/// methods validate and seed. No window title ever reaches this trait.
+pub trait DistractionRuleRepo {
+    /// Live rules, oldest first (creation time, then id).
     fn rules(&self) -> RepoResult<Vec<DistractionRule>>;
     /// How many rules were ever stored, deleted ones included.
     fn rules_ever(&self) -> RepoResult<u64>;
@@ -371,16 +370,6 @@ pub trait DistractionRepo {
     fn set_rule_enabled(&self, id: Id, enabled: bool) -> RepoResult<()>;
     /// Soft delete; the rule's events keep pointing at it.
     fn delete_rule(&self, id: Id) -> RepoResult<()>;
-    fn insert_distraction(
-        &self,
-        rule_id: Id,
-        context: WatchContext,
-        started_at: Timestamp,
-    ) -> RepoResult<DistractionEvent>;
-    /// Ends every open event at `at` (or at its start, if that is later).
-    fn end_distractions(&self, at: Timestamp) -> RepoResult<()>;
-    /// Live events still open or ended after `since`, oldest first.
-    fn distractions_since(&self, since: Timestamp) -> RepoResult<Vec<DistractionEvent>>;
 
     fn add_rule(&self, draft: &RuleDraft) -> RepoResult<DistractionRule> {
         self.insert_rule(&draft.validated()?)
@@ -397,6 +386,21 @@ pub trait DistractionRepo {
         }
         Ok(true)
     }
+}
+
+/// Distraction events. Backends implement the primitives; the provided
+/// method carries out the nudge watcher's commands.
+pub trait DistractionEventRepo {
+    fn insert_distraction(
+        &self,
+        rule_id: Id,
+        context: WatchContext,
+        started_at: Timestamp,
+    ) -> RepoResult<DistractionEvent>;
+    /// Ends every open event at `at` (or at its start, if that is later).
+    fn end_distractions(&self, at: Timestamp) -> RepoResult<()>;
+    /// Live events still open or ended after `since`, oldest first.
+    fn distractions_since(&self, since: Timestamp) -> RepoResult<Vec<DistractionEvent>>;
 
     /// Records what the nudge watcher decided. At most one event is open:
     /// starting one ends any other first.

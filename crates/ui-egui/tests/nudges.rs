@@ -7,8 +7,9 @@ use std::sync::Arc;
 use jiff::civil::Weekday;
 use jiff::{SignedDuration, Timestamp};
 use wt_core::{
-    BlockDraft, BlockRepo, CategoryRepo, DistractionRepo, FixedClock, ForegroundWatcher,
-    ForegroundWindow, Id, Notifier, SessionRepo, Settings, TimerTarget, WatchContext, Weekdays,
+    BlockDraft, BlockRepo, CategoryRepo, DistractionEventRepo, DistractionRuleRepo, FixedClock,
+    ForegroundWatcher, ForegroundWindow, Id, Notifier, SessionRepo, Settings, TimerTarget,
+    WatchContext, Weekdays,
 };
 use wt_storage::SqliteStore;
 use wt_ui_egui::Nudges;
@@ -207,7 +208,8 @@ fn reels_during_a_learning_block_nudges_once_and_records_the_event_without_the_t
             app.rule("Facebook"),
             WatchContext::Learning,
             ts("2026-10-22T03:00:00Z"),
-            Some(ts("2026-10-22T03:03:00Z"))
+            // The last poll that saw Facebook, not the one that saw VS Code.
+            Some(ts("2026-10-22T03:02:55Z"))
         )]
     );
     let bytes = app.database_bytes();
@@ -263,12 +265,48 @@ fn stopping_ends_the_open_event() {
     let mut app = App::new();
     app.learning_block();
     app.window.show(TITLE, "chrome.exe");
-    app.poll_for(90);
+    app.poll_for(90); // polls 03:00:00 to 03:01:25
 
     let store = app.store.as_ref().unwrap();
-    app.nudges.stop(store, app.clock.as_ref()).unwrap();
+    app.nudges.stop(store).unwrap();
 
-    assert_eq!(app.events()[0].3, Some(ts("2026-10-22T03:01:30Z")));
+    assert_eq!(app.events()[0].3, Some(ts("2026-10-22T03:01:25Z")));
+}
+
+#[test]
+fn the_stored_duration_leaves_out_the_poll_that_no_longer_matched() {
+    let mut app = App::new();
+    app.learning_block();
+    app.window.show("Facebook", "chrome.exe");
+    app.poll_for(100); // matching polls 03:00:00 to 03:01:35
+
+    app.window.show("Notes", "notepad.exe");
+    app.poll(); // 03:01:40
+
+    let (_, _, started, ended) = app.events()[0];
+    assert_eq!(started, ts("2026-10-22T03:00:00Z"));
+    assert_eq!(ended, Some(ts("2026-10-22T03:01:35Z")));
+    assert_eq!(
+        ended.unwrap().duration_since(started),
+        SignedDuration::from_secs(95)
+    );
+}
+
+#[test]
+fn a_title_matching_two_rules_is_recorded_under_the_oldest() {
+    let mut app = App::new();
+    app.learning_block();
+    // The default rules are seeded in one instant: Facebook, then Reels.
+    let rules = app.store().rules().unwrap();
+    let (facebook, reels) = (&rules[0], &rules[1]);
+    assert_eq!(facebook.meta.created_at, reels.meta.created_at);
+    assert!(facebook.meta.id < reels.meta.id);
+    app.window.show("Reels | Facebook", "chrome.exe");
+
+    app.poll_for(65);
+
+    assert_eq!(app.events()[0].0, app.rule("Facebook"));
+    assert_eq!(app.nudges()[0].0, "Facebook during your Learning block");
 }
 
 #[test]

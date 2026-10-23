@@ -1,6 +1,6 @@
 use egui::{ComboBox, RichText, TextEdit, Ui};
 use wt_core::repo::RepoResult;
-use wt_core::{DistractionRepo, Id, MatchOn, RuleDraft};
+use wt_core::{DistractionRuleRepo, Id, MatchOn, RuleDraft};
 
 use crate::theme::palette;
 use crate::widgets::{
@@ -33,7 +33,7 @@ enum Action {
 
 impl FocusScreen {
     /// `poll_error` is the last failure of the background distraction check.
-    pub fn ui(&mut self, ui: &mut Ui, store: &dyn DistractionRepo, poll_error: Option<&str>) {
+    pub fn ui(&mut self, ui: &mut Ui, store: &dyn DistractionRuleRepo, poll_error: Option<&str>) {
         let p = palette(ui);
         screen_title(ui, Icon::Focus, p.accent, "Focus");
         ui.label(
@@ -105,7 +105,7 @@ impl FocusScreen {
         }
     }
 
-    fn apply(&mut self, action: Action, store: &dyn DistractionRepo) {
+    fn apply(&mut self, action: Action, store: &dyn DistractionRuleRepo) {
         let result: RepoResult<()> = match action {
             Action::Add => store.add_rule(&self.draft).map(|_| {
                 self.draft.pattern.clear();

@@ -176,7 +176,8 @@ fn the_event_ends_when_the_window_stops_matching() {
     run.span(0, 90, OFFICE, Some(&fb));
     let commands = run.span(95, 100, OFFICE, Some(&code));
 
-    assert_eq!(commands, [(95, NudgeCommand::EndEvent { at: Run::at(95) })]);
+    // It ends at the last sample that still matched, not at the first that didn't.
+    assert_eq!(commands, [(95, NudgeCommand::EndEvent { at: Run::at(90) })]);
 }
 
 #[test]
@@ -187,7 +188,39 @@ fn the_event_ends_when_the_context_ends() {
     run.span(0, 90, OFFICE, Some(&fb));
     let commands = run.span(95, 200, None, Some(&fb));
 
-    assert_eq!(commands, [(95, NudgeCommand::EndEvent { at: Run::at(95) })]);
+    assert_eq!(commands, [(95, NudgeCommand::EndEvent { at: Run::at(90) })]);
+}
+
+#[test]
+fn the_event_ends_at_the_last_match_when_its_rule_is_disabled() {
+    let mut run = Run::new();
+    let fb = window("Facebook", "chrome.exe");
+
+    run.span(0, 90, OFFICE, Some(&fb));
+    run.rules[0].enabled = false;
+    let commands = run.span(95, 100, OFFICE, Some(&fb));
+
+    assert_eq!(commands, [(95, NudgeCommand::EndEvent { at: Run::at(90) })]);
+}
+
+#[test]
+fn a_break_ends_the_event_at_the_last_match_even_in_a_learning_block() {
+    let mut run = Run::new();
+    let fb = window("Facebook", "chrome.exe");
+    let learning = category(CategoryKind::Learning);
+    let brk = category(CategoryKind::Break);
+    let cats = [learning.clone(), brk.clone()];
+    let blocks = [block(&learning)];
+    let tz = TimeZone::UTC;
+
+    // 21:00-21:01:30 in the learning block, then a break starts.
+    let before = watch_context(None, &blocks, &cats, Run::at(0), &tz);
+    run.span(0, 90, before, Some(&fb));
+    let during = watch_context(Some(&running(&brk)), &blocks, &cats, Run::at(95), &tz);
+    let commands = run.span(95, 300, during, Some(&fb));
+
+    assert_eq!(during, None);
+    assert_eq!(commands, [(95, NudgeCommand::EndEvent { at: Run::at(90) })]);
 }
 
 #[test]
@@ -196,10 +229,11 @@ fn stopping_the_watcher_ends_an_open_event() {
     let fb = window("Facebook", "chrome.exe");
     run.span(0, 90, OFFICE, Some(&fb));
 
-    let commands = run.watcher.stop(Run::at(92));
+    let commands = run.watcher.stop();
 
-    assert_eq!(commands, [NudgeCommand::EndEvent { at: Run::at(92) }]);
-    assert_eq!(run.watcher.stop(Run::at(93)), []);
+    // The last time Facebook was seen in front.
+    assert_eq!(commands, [NudgeCommand::EndEvent { at: Run::at(90) }]);
+    assert_eq!(run.watcher.stop(), []);
 }
 
 #[test]
@@ -211,7 +245,7 @@ fn switching_rule_or_context_starts_a_new_grace_period() {
     run.span(0, 90, OFFICE, Some(&fb));
     // The Facebook event ends; Reels must last its own 60 s.
     let switched = run.span(95, 150, OFFICE, Some(&reels));
-    assert_eq!(switched, [(95, NudgeCommand::EndEvent { at: Run::at(95) })]);
+    assert_eq!(switched, [(95, NudgeCommand::EndEvent { at: Run::at(90) })]);
 
     // Reels wasn't recorded yet; in a new context its grace starts over.
     let commands = run.span(155, 400, LEARNING, Some(&reels));
@@ -417,5 +451,7 @@ fn the_watch_context_follows_blocks_and_running_timers() {
     assert_eq!(context(Some(&meeting), &[], after_block), OFFICE);
     assert_eq!(context(Some(&family), &family_block, in_block), None);
     assert_eq!(context(Some(&brk), &[], in_block), None);
+    // No nudging during a break, even inside a learning block.
+    assert_eq!(context(Some(&brk), &learning_block, in_block), None);
     assert_eq!(context(None, &[], in_block), None);
 }

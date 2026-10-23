@@ -20,8 +20,8 @@ use std::time::{Duration, Instant};
 
 use egui::{Context, ViewportCommand};
 use wt_core::{
-    Autostart, BlockRepo, Clock, DistractionRepo, ForegroundWatcher, Notifier, SessionRepo,
-    SettingsRepo,
+    Autostart, BlockRepo, Clock, DistractionEventRepo, DistractionRuleRepo, ForegroundWatcher,
+    Notifier, SessionRepo, SettingsRepo,
 };
 
 use crate::widgets::Icon;
@@ -43,17 +43,17 @@ const TICK_EVERY: Duration = Duration::from_secs(15);
 const POLL_EVERY: Duration = Duration::from_secs(5);
 
 /// Anything that stores everything the UI needs.
-pub trait Store: SettingsRepo + PlanStore + DistractionRepo {}
-impl<T: SettingsRepo + PlanStore + DistractionRepo> Store for T {}
+pub trait Store: SettingsRepo + PlanStore + DistractionRuleRepo + DistractionEventRepo {}
+impl<T: SettingsRepo + PlanStore + DistractionRuleRepo + DistractionEventRepo> Store for T {}
 
 /// What the nudges need: the running timer and blocks (for the context),
 /// categories, rules and events.
-pub trait NudgeStore: SessionRepo + BlockRepo + DistractionRepo {}
-impl<T: SessionRepo + BlockRepo + DistractionRepo> NudgeStore for T {}
+pub trait NudgeStore: SessionRepo + BlockRepo + DistractionRuleRepo + DistractionEventRepo {}
+impl<T: SessionRepo + BlockRepo + DistractionRuleRepo + DistractionEventRepo> NudgeStore for T {}
 
 /// What the reports need: sessions, tasks, categories and distractions.
-pub trait ReportStore: SessionRepo + DistractionRepo {}
-impl<T: SessionRepo + DistractionRepo> ReportStore for T {}
+pub trait ReportStore: SessionRepo + DistractionRuleRepo + DistractionEventRepo {}
+impl<T: SessionRepo + DistractionRuleRepo + DistractionEventRepo> ReportStore for T {}
 
 /// What the planning screen needs: sessions (for progress), targets, blocks.
 pub trait PlanStore: SessionRepo + wt_core::TargetRepo + wt_core::BlockRepo {}
@@ -210,8 +210,10 @@ impl<S: Store> eframe::App for WfhApp<S> {
         if ctx.input(|i| i.viewport().close_requested()) {
             if self.quitting.load(Ordering::SeqCst) {
                 // Quitting stops the watching: close an open distraction now.
-                // Best effort: one left open is ended at the last heartbeat next start.
-                let _ = self.nudges.stop(&self.store, self.clock.as_ref());
+                // If this fails, one left open is ended at the last heartbeat next start.
+                if let Err(e) = self.nudges.stop(&self.store) {
+                    eprintln!("wfh-tracker: could not end the open distraction: {e}");
+                }
             } else {
                 ctx.send_viewport_cmd(ViewportCommand::CancelClose);
                 ctx.send_viewport_cmd(ViewportCommand::Visible(false));

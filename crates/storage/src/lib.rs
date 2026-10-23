@@ -2,7 +2,8 @@
 
 mod block;
 mod category;
-mod distraction;
+mod distraction_event;
+mod distraction_rule;
 mod session;
 mod settings;
 mod target;
@@ -79,6 +80,11 @@ fn require_changed(id: Id, changed_rows: usize) -> Result<(), RepoError> {
     } else {
         Ok(())
     }
+}
+
+/// A stored value that doesn't parse.
+fn corrupt(e: impl std::fmt::Display) -> RepoError {
+    RepoError::Corrupt(e.to_string())
 }
 
 fn parse_id(s: &str) -> Result<Id, RepoError> {

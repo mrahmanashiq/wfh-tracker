@@ -9,7 +9,8 @@ pub mod block;
 pub mod category;
 pub mod clipboard;
 pub mod clock;
-pub mod distraction;
+pub mod distraction_event;
+pub mod distraction_rule;
 pub mod id;
 pub mod notifier;
 pub mod nudge;
@@ -27,16 +28,18 @@ pub use block::{Block, BlockDraft, Weekdays, active_block, clock_text};
 pub use category::{Category, CategoryKind, NewCategory, ParseError, Rgb};
 pub use clipboard::{Clipboard, ClipboardError};
 pub use clock::{Clock, FixedClock};
-pub use distraction::{DistractionEvent, DistractionRule, MatchOn, RuleDraft, WatchContext};
+pub use distraction_event::{DistractionEvent, WatchContext};
+pub use distraction_rule::{DistractionRule, MatchOn, RuleDraft};
 pub use id::Id;
 pub use notifier::Notifier;
 pub use nudge::{
-    ForegroundWatcher, ForegroundWindow, NudgeCommand, NudgeWatcher, Sample, watch_context,
+    ForegroundWatcher, ForegroundWindow, NudgeCommand, NudgeWatcher, Sample, learning_block_on,
+    nudge_title, watch_context,
 };
 pub use reminders::{Notice, Reminders, Tick};
 pub use repo::{
-    BlockRepo, CategoryRepo, DistractionRepo, Meta, RepoError, SessionRepo, SettingsRepo,
-    TargetRepo, TaskRepo,
+    BlockRepo, CategoryRepo, DistractionEventRepo, DistractionRuleRepo, Meta, RepoError,
+    SessionRepo, SettingsRepo, TargetRepo, TaskRepo,
 };
 pub use reports::{ReportInput, duration_text, my_time_report, office_report};
 pub use session::{

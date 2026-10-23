@@ -7,8 +7,8 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use jiff::{SignedDuration, Timestamp};
 use wt_core::{
-    CategoryRepo, Clipboard, ClipboardError, DistractionRepo, FixedClock, Placement, SessionRepo,
-    Settings, TaskRepo, TimerTarget, WatchContext,
+    CategoryRepo, Clipboard, ClipboardError, DistractionEventRepo, DistractionRuleRepo, FixedClock,
+    Placement, SessionRepo, Settings, TaskRepo, TimerTarget, WatchContext,
 };
 use wt_storage::SqliteStore;
 use wt_ui_egui::ReportsScreen;
