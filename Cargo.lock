@@ -6000,7 +6000,7 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "wfh-tracker"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "eframe",
  "winresource",
@@ -6644,7 +6644,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "wt-core"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "jiff",
  "thiserror 2.0.21",
@@ -6653,7 +6653,7 @@ dependencies = [
 
 [[package]]
 name = "wt-platform"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "active-win-pos-rs",
  "arboard",
@@ -6671,7 +6671,7 @@ dependencies = [
 
 [[package]]
 name = "wt-storage"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "jiff",
  "rusqlite",
@@ -6681,7 +6681,7 @@ dependencies = [
 
 [[package]]
 name = "wt-ui-egui"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "eframe",
  "egui",
@@ -6777,7 +6777,7 @@ checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
 name = "xtask"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "jiff",
 ]
