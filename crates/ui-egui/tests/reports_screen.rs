@@ -7,8 +7,8 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use jiff::{SignedDuration, Timestamp};
 use wt_core::{
-    CategoryRepo, Clipboard, ClipboardError, FixedClock, Placement, SessionRepo, Settings,
-    TaskRepo, TimerTarget,
+    CategoryRepo, Clipboard, ClipboardError, DistractionRepo, FixedClock, Placement, SessionRepo,
+    Settings, TaskRepo, TimerTarget, WatchContext,
 };
 use wt_storage::SqliteStore;
 use wt_ui_egui::ReportsScreen;
@@ -126,4 +126,41 @@ fn the_previous_day_button_shows_yesterdays_reports() {
          Meetings - none\n\
          Overtime - none"
     );
+}
+
+#[test]
+fn my_time_includes_the_days_distractions_but_the_office_report_does_not() {
+    let mut h = harness();
+    let store = &h.state().store;
+    store.seed_default_rules().unwrap();
+    let facebook = store.rules().unwrap()[0].meta.id;
+    // 03:10-03:25, during the hour on "Checkout".
+    store
+        .insert_distraction(
+            facebook,
+            WatchContext::Office,
+            "2026-10-22T03:10:00Z".parse().unwrap(),
+        )
+        .unwrap();
+    store
+        .end_distractions("2026-10-22T03:25:00Z".parse().unwrap())
+        .unwrap();
+    h.run();
+
+    h.get_by_label("Copy my time").click();
+    h.run();
+    assert_eq!(
+        copied(&h),
+        "My time - Thu 22 Oct 2026\n\
+         \n\
+         Personal - 0h 20m\n  \
+         Family - 20m\n\
+         \n\
+         Distractions - 0h 15m\n  \
+         Facebook - 15m (office)"
+    );
+
+    h.get_by_label("Copy office report").click();
+    h.run();
+    assert!(!copied(&h).contains("Facebook"));
 }

@@ -4,8 +4,8 @@ use jiff::Timestamp;
 use jiff::civil::{Date, date};
 use jiff::tz::TimeZone;
 use wt_core::{
-    Category, CategoryKind, Id, Meta, ReportInput, Rgb, Session, Settings, Task, my_time_report,
-    office_report,
+    Category, CategoryKind, DistractionEvent, DistractionRule, Id, MatchOn, Meta, ReportInput, Rgb,
+    Session, Settings, Task, WatchContext, my_time_report, office_report,
 };
 
 fn ts(s: &str) -> Timestamp {
@@ -43,6 +43,8 @@ struct Day {
     sessions: Vec<Session>,
     all_categories: Vec<Category>,
     settings: Settings,
+    rules: Vec<DistractionRule>,
+    distractions: Vec<DistractionEvent>,
 }
 
 impl Day {
@@ -58,6 +60,8 @@ impl Day {
             sessions: Vec::new(),
             all_categories: Vec::new(),
             settings: Settings::default(),
+            rules: Vec::new(),
+            distractions: Vec::new(),
         }
         .with_category_list()
     }
@@ -125,7 +129,31 @@ impl Day {
             tasks: &self.tasks,
             categories: &self.all_categories,
             settings: &self.settings,
+            rules: &self.rules,
+            distractions: &self.distractions,
         }
+    }
+
+    fn rule(&mut self, pattern: &str) -> Id {
+        let rule = DistractionRule {
+            meta: meta(),
+            pattern: pattern.to_owned(),
+            match_on: MatchOn::Title,
+            enabled: true,
+        };
+        let id = rule.meta.id;
+        self.rules.push(rule);
+        id
+    }
+
+    fn distraction(&mut self, rule: Id, context: WatchContext, from: &str, to: Option<&str>) {
+        self.distractions.push(DistractionEvent {
+            meta: meta(),
+            rule_id: rule,
+            context,
+            started_at: ts(from),
+            ended_at: to.map(ts),
+        });
     }
 }
 
@@ -487,5 +515,123 @@ fn a_third_level_is_indented_and_counted_in_every_total_above() {
          ✅ Auth header - 30m\n\
          Meetings - none\n\
          Overtime - none"
+    );
+}
+
+#[test]
+fn my_time_lists_distractions_per_rule_and_context_after_personal_time() {
+    let mut d = Day::new();
+    let family = d.family.clone();
+    d.session(
+        None,
+        &family,
+        "2026-10-22T17:00:00Z",
+        "2026-10-22T18:00:00Z",
+    );
+    let facebook = d.rule("Facebook");
+    let reels = d.rule("Reels");
+    d.rule("Instagram"); // nothing recorded: no line
+    d.distraction(
+        reels,
+        WatchContext::Learning,
+        "2026-10-22T21:10:00Z",
+        Some("2026-10-22T21:15:00Z"),
+    );
+    d.distraction(
+        facebook,
+        WatchContext::Office,
+        "2026-10-22T04:00:00Z",
+        Some("2026-10-22T04:12:00Z"),
+    );
+    d.distraction(
+        facebook,
+        WatchContext::Office,
+        "2026-10-22T08:00:00Z",
+        Some("2026-10-22T08:08:00Z"),
+    );
+    d.distraction(
+        facebook,
+        WatchContext::Learning,
+        "2026-10-22T21:20:00Z",
+        Some("2026-10-22T21:23:00Z"),
+    );
+    let gone = Id::new(); // a rule deleted since
+    d.distraction(
+        gone,
+        WatchContext::Office,
+        "2026-10-22T09:00:00Z",
+        Some("2026-10-22T09:02:00Z"),
+    );
+
+    assert_eq!(
+        d.my_time_report(THURSDAY, &TimeZone::UTC),
+        "My time - Thu 22 Oct 2026\n\
+         \n\
+         Personal - 1h 00m\n  \
+         Family - 1h 00m\n\
+         \n\
+         Distractions - 0h 30m\n  \
+         Facebook - 3m (learning)\n  \
+         Facebook - 20m (office)\n  \
+         Reels - 5m (learning)\n  \
+         (deleted rule) - 2m (office)"
+    );
+}
+
+#[test]
+fn distractions_never_show_in_the_office_report() {
+    let mut d = Day::new();
+    let office = d.office.clone();
+    d.session(
+        None,
+        &office,
+        "2026-10-22T03:00:00Z",
+        "2026-10-22T05:00:00Z",
+    );
+    let before = d.office_report(THURSDAY, &TimeZone::UTC);
+    let facebook = d.rule("Facebook");
+    d.distraction(
+        facebook,
+        WatchContext::Office,
+        "2026-10-22T04:00:00Z",
+        Some("2026-10-22T04:20:00Z"),
+    );
+
+    assert_eq!(d.office_report(THURSDAY, &TimeZone::UTC), before);
+}
+
+#[test]
+fn distractions_count_only_the_report_day_and_an_open_one_up_to_now() {
+    let mut d = Day::new();
+    let facebook = d.rule("Facebook");
+    let shorts = d.rule("Shorts");
+    // 23:50 Thursday to 00:30 Friday: 10 min on Thursday.
+    d.distraction(
+        facebook,
+        WatchContext::Learning,
+        "2026-10-22T23:50:00Z",
+        Some("2026-10-23T00:30:00Z"),
+    );
+    // Still open; the report's "now" is 2026-10-24T00:00Z.
+    d.distraction(shorts, WatchContext::Office, "2026-10-23T23:45:00Z", None);
+    // Under a minute: left out.
+    d.distraction(
+        shorts,
+        WatchContext::Learning,
+        "2026-10-23T10:00:00Z",
+        Some("2026-10-23T10:00:40Z"),
+    );
+
+    assert_eq!(
+        d.my_time_report(THURSDAY, &TimeZone::UTC),
+        "My time - Thu 22 Oct 2026\n\nDistractions - 0h 10m\n  Facebook - 10m (learning)"
+    );
+    assert_eq!(
+        d.my_time_report(FRIDAY, &TimeZone::UTC),
+        "My time - Fri 23 Oct 2026\n\
+         \n\
+         Distractions - 0h 45m\n  \
+         Facebook - 30m (learning)\n  \
+         Shorts - 15m (office)"
     );
 }

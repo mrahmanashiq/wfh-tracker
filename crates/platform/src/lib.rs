@@ -3,6 +3,7 @@
 
 mod autostart;
 mod clipboard;
+mod foreground;
 mod hotkey;
 mod icon_art;
 mod notify;
@@ -16,6 +17,7 @@ use wt_core::Clock;
 
 pub use autostart::LoginAutostart;
 pub use clipboard::SystemClipboard;
+pub use foreground::OsForegroundWatcher;
 pub use hotkey::MeetingHotkey;
 pub use icon_art::app_icon_rgba;
 pub use notify::{APP_ID, DesktopNotifier, register_notifications};

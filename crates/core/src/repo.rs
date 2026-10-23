@@ -7,8 +7,9 @@ use crate::task::{MAX_DEPTH, clean_title};
 use jiff::SignedDuration;
 
 use crate::{
-    Block, BlockDraft, Category, CategoryKind, Id, MeetingToggle, NewCategory, Period, Placement,
-    Rgb, Session, Settings, SettingsError, Switch, Target, Task, TimerTarget,
+    Block, BlockDraft, Category, CategoryKind, DistractionEvent, DistractionRule, Id,
+    MeetingToggle, NewCategory, NudgeCommand, Period, Placement, Rgb, RuleDraft, Session, Settings,
+    SettingsError, Switch, Target, Task, TimerTarget, WatchContext,
 };
 
 /// Columns every record carries so a future sync can merge and propagate deletes.
@@ -355,5 +356,63 @@ pub trait BlockRepo {
 
     fn update_block(&self, id: Id, draft: &BlockDraft) -> RepoResult<Block> {
         self.write_block(id, &draft.validated()?)
+    }
+}
+
+/// Distraction rules and the events recorded for them. Backends implement
+/// the primitives; the provided methods validate, seed and carry out the
+/// watcher's commands. No window title ever reaches this trait.
+pub trait DistractionRepo {
+    /// Live rules, oldest first.
+    fn rules(&self) -> RepoResult<Vec<DistractionRule>>;
+    /// How many rules were ever stored, deleted ones included.
+    fn rules_ever(&self) -> RepoResult<u64>;
+    fn insert_rule(&self, draft: &RuleDraft) -> RepoResult<DistractionRule>;
+    fn set_rule_enabled(&self, id: Id, enabled: bool) -> RepoResult<()>;
+    /// Soft delete; the rule's events keep pointing at it.
+    fn delete_rule(&self, id: Id) -> RepoResult<()>;
+    fn insert_distraction(
+        &self,
+        rule_id: Id,
+        context: WatchContext,
+        started_at: Timestamp,
+    ) -> RepoResult<DistractionEvent>;
+    /// Ends every open event at `at` (or at its start, if that is later).
+    fn end_distractions(&self, at: Timestamp) -> RepoResult<()>;
+    /// Live events still open or ended after `since`, oldest first.
+    fn distractions_since(&self, since: Timestamp) -> RepoResult<Vec<DistractionEvent>>;
+
+    fn add_rule(&self, draft: &RuleDraft) -> RepoResult<DistractionRule> {
+        self.insert_rule(&draft.validated()?)
+    }
+
+    /// Inserts the default rules only into a database that has never had
+    /// any. Returns whether it inserted.
+    fn seed_default_rules(&self) -> RepoResult<bool> {
+        if self.rules_ever()? > 0 {
+            return Ok(false);
+        }
+        for draft in RuleDraft::defaults() {
+            self.add_rule(&draft)?;
+        }
+        Ok(true)
+    }
+
+    /// Records what the nudge watcher decided. At most one event is open:
+    /// starting one ends any other first.
+    fn record(&self, command: &NudgeCommand) -> RepoResult<()> {
+        match *command {
+            NudgeCommand::StartEvent {
+                rule,
+                context,
+                started_at,
+            } => {
+                self.end_distractions(started_at)?;
+                self.insert_distraction(rule, context, started_at)
+                    .map(|_| ())
+            }
+            NudgeCommand::EndEvent { at } => self.end_distractions(at),
+            NudgeCommand::Nudge { .. } => Ok(()),
+        }
     }
 }

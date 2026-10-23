@@ -4,10 +4,9 @@ use egui::{Color32, CornerRadius, Frame, Margin, RichText, ScrollArea, Ui};
 use jiff::ToSpan;
 use jiff::civil::Date;
 use wt_core::repo::RepoResult;
-use wt_core::{
-    Clipboard, Clock, ReportInput, SessionRepo, Settings, my_time_report, office_report,
-};
+use wt_core::{Clipboard, Clock, ReportInput, Settings, my_time_report, office_report};
 
+use crate::ReportStore;
 use crate::theme::palette;
 use crate::widgets::{Icon, icon_button, message, pill, screen_title};
 
@@ -33,7 +32,7 @@ impl ReportsScreen {
     pub fn ui(
         &mut self,
         ui: &mut Ui,
-        store: &dyn SessionRepo,
+        store: &dyn ReportStore,
         settings: &Settings,
         clock: &dyn Clock,
         clipboard: &dyn Clipboard,
@@ -128,7 +127,7 @@ impl ReportsScreen {
 }
 
 fn reports(
-    store: &dyn SessionRepo,
+    store: &dyn ReportStore,
     settings: &Settings,
     clock: &dyn Clock,
     day: Date,
@@ -143,6 +142,8 @@ fn reports(
     let sessions = store.sessions_since(day_start)?;
     let tasks = store.list_live()?;
     let categories = store.list()?;
+    let rules = store.rules()?;
+    let distractions = store.distractions_since(day_start)?;
     let input = ReportInput {
         day,
         tz: &tz,
@@ -151,6 +152,8 @@ fn reports(
         tasks: &tasks,
         categories: &categories,
         settings,
+        rules: &rules,
+        distractions: &distractions,
     };
     Ok((office_report(&input), my_time_report(&input)))
 }

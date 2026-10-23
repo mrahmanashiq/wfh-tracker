@@ -8,7 +8,8 @@ use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 
 use crate::{
-    Category, CategoryKind, Id, OfficeStatus, Session, Settings, Task, office_status, office_time,
+    Category, CategoryKind, DistractionEvent, DistractionRule, Id, OfficeStatus, Session, Settings,
+    Task, WatchContext, office_status, office_time,
 };
 
 /// Everything a report needs about one local day.
@@ -23,6 +24,11 @@ pub struct ReportInput<'a> {
     pub tasks: &'a [Task],
     pub categories: &'a [Category],
     pub settings: &'a Settings,
+    /// Live distraction rules, in their order; events of rules not listed
+    /// are reported as a deleted rule.
+    pub rules: &'a [DistractionRule],
+    /// Distraction events around the day (others contribute nothing).
+    pub distractions: &'a [DistractionEvent],
 }
 
 /// Report text counts whole minutes: under a minute is left out rather
@@ -116,7 +122,8 @@ pub fn office_report(input: &ReportInput<'_>) -> String {
     lines.join("\n")
 }
 
-/// The private report: learning by task, then personal time by category.
+/// The private report: learning by task, personal time by category, then
+/// distractions by rule and context.
 pub fn my_time_report(input: &ReportInput<'_>) -> String {
     let day = Day::new(input);
     let mut sections = Vec::new();
@@ -170,6 +177,9 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
     if personal_total.shows() {
         sections.push(section("Personal", personal_total, personal));
     }
+    if let Some(distractions) = distractions_section(input) {
+        sections.push(distractions);
+    }
 
     let body = if sections.is_empty() {
         "Nothing tracked for yourself this day.".to_owned()
@@ -177,6 +187,43 @@ pub fn my_time_report(input: &ReportInput<'_>) -> String {
         sections.join("\n\n")
     };
     format!("My time - {}\n\n{body}", date_text(input.day))
+}
+
+/// `Distractions - 0h 25m`, then `Facebook - 20m (office)` per rule and
+/// context: rules in their order, learning before office, deleted rules last.
+fn distractions_section(input: &ReportInput<'_>) -> Option<String> {
+    let time: Vec<(&DistractionEvent, SignedDuration)> = input
+        .distractions
+        .iter()
+        .map(|e| (e, e.time_within(input.day, input.tz, input.now)))
+        .filter(|(_, t)| t.is_positive())
+        .collect();
+    let total = sum(time.iter().map(|(_, t)| *t));
+    if !total.shows() {
+        return None;
+    }
+    let time_for = |keep: &dyn Fn(&DistractionEvent) -> bool, context: WatchContext| {
+        sum(time
+            .iter()
+            .filter(|(e, _)| e.context == context && keep(e))
+            .map(|(_, t)| *t))
+    };
+    let mut lines = Vec::new();
+    let mut add = |name: &str, keep: &dyn Fn(&DistractionEvent) -> bool| {
+        for context in WatchContext::ALL {
+            let t = time_for(keep, context);
+            if t.shows() {
+                lines.push(format!("{name} - {} ({context})", duration_text(t)));
+            }
+        }
+    };
+    for rule in input.rules {
+        add(&rule.pattern, &|e| e.rule_id == rule.meta.id);
+    }
+    add("(deleted rule)", &|e| {
+        !input.rules.iter().any(|r| r.meta.id == e.rule_id)
+    });
+    Some(section("Distractions", total, lines))
 }
 
 fn is_personal(kind: CategoryKind) -> bool {

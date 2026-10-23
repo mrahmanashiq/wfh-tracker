@@ -14,6 +14,7 @@ wt-storage = { path = "crates/storage" }
 wt-platform = { path = "crates/platform" }
 wt-ui-egui = { path = "crates/ui-egui" }
 
+active-win-pos-rs = "0.11"
 arboard = "3.7"
 auto-launch = "0.6"
 cargo-packager-updater = "0.2.3"

@@ -41,16 +41,25 @@ impl Session {
 
     /// How much of this session falls on the local calendar `day`.
     pub fn time_within(&self, day: Date, tz: &TimeZone, now: Timestamp) -> SignedDuration {
-        let Some((day_start, day_end)) = day_bounds(day, tz) else {
-            return SignedDuration::ZERO;
-        };
-        let start = self.started_at.max(day_start);
-        let end = self.end_or(now).min(day_end);
-        if end > start {
-            end.duration_since(start)
-        } else {
-            SignedDuration::ZERO
-        }
+        span_within(self.started_at, self.end_or(now), day, tz)
+    }
+}
+
+/// How much of `[start, end)` falls on the local calendar `day`.
+pub(crate) fn span_within(
+    start: Timestamp,
+    end: Timestamp,
+    day: Date,
+    tz: &TimeZone,
+) -> SignedDuration {
+    let Some((day_start, day_end)) = day_bounds(day, tz) else {
+        return SignedDuration::ZERO;
+    };
+    let (start, end) = (start.max(day_start), end.min(day_end));
+    if end > start {
+        end.duration_since(start)
+    } else {
+        SignedDuration::ZERO
     }
 }
 

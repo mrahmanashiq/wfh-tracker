@@ -96,6 +96,7 @@ pub enum Icon {
     Back,
     Forward,
     Target,
+    Focus,
 }
 
 impl Icon {
@@ -175,6 +176,15 @@ impl Icon {
                 painter.circle_stroke(c, 6.5, Stroke::new(1.5, color));
                 painter.circle_stroke(c, 3.5, Stroke::new(1.5, color));
                 painter.circle_filled(c, 1.3, color);
+            }
+            Icon::Focus => {
+                // A ring with four short ticks: a viewfinder.
+                let s = Stroke::new(1.5, color);
+                painter.circle_stroke(c, 4.5, s);
+                for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+                    let d = vec2(dx, dy);
+                    painter.line_segment([c + d * 6.0, c + d * 8.0], s);
+                }
             }
             Icon::Plus => {
                 let s = Stroke::new(1.8, color);

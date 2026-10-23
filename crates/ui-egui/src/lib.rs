@@ -2,6 +2,8 @@
 //! through the traits in `wt-core`, so the UI can be replaced on its own.
 
 mod categories_screen;
+mod focus_screen;
+mod nudges;
 mod planning_screen;
 mod reports_screen;
 mod settings_screen;
@@ -17,11 +19,16 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
 use egui::{Context, ViewportCommand};
-use wt_core::{Autostart, Clock, Notifier, SessionRepo, SettingsRepo};
+use wt_core::{
+    Autostart, BlockRepo, Clock, DistractionRepo, ForegroundWatcher, Notifier, SessionRepo,
+    SettingsRepo,
+};
 
 use crate::widgets::Icon;
 
 pub use categories_screen::CategoriesScreen;
+pub use focus_screen::FocusScreen;
+pub use nudges::Nudges;
 pub use planning_screen::PlanningScreen;
 pub use reports_screen::ReportsScreen;
 pub use settings_screen::SettingsScreen;
@@ -32,10 +39,21 @@ pub use updates::UpdateController;
 
 /// How often reminders and the heartbeat are checked, shown or hidden.
 const TICK_EVERY: Duration = Duration::from_secs(15);
+/// How often the foreground window is checked for distractions.
+const POLL_EVERY: Duration = Duration::from_secs(5);
 
 /// Anything that stores everything the UI needs.
-pub trait Store: SettingsRepo + PlanStore {}
-impl<T: SettingsRepo + PlanStore> Store for T {}
+pub trait Store: SettingsRepo + PlanStore + DistractionRepo {}
+impl<T: SettingsRepo + PlanStore + DistractionRepo> Store for T {}
+
+/// What the nudges need: the running timer and blocks (for the context),
+/// categories, rules and events.
+pub trait NudgeStore: SessionRepo + BlockRepo + DistractionRepo {}
+impl<T: SessionRepo + BlockRepo + DistractionRepo> NudgeStore for T {}
+
+/// What the reports need: sessions, tasks, categories and distractions.
+pub trait ReportStore: SessionRepo + DistractionRepo {}
+impl<T: SessionRepo + DistractionRepo> ReportStore for T {}
 
 /// What the planning screen needs: sessions (for progress), targets, blocks.
 pub trait PlanStore: SessionRepo + wt_core::TargetRepo + wt_core::BlockRepo {}
@@ -83,8 +101,14 @@ pub struct WfhApp<S> {
     clock: Arc<dyn Clock>,
     autostart: Box<dyn Autostart>,
     notifier: Box<dyn Notifier>,
+    foreground: Box<dyn ForegroundWatcher>,
     commands: Receiver<ShellCommand>,
     last_tick: Option<Instant>,
+    last_poll: Option<Instant>,
+    nudges: Nudges,
+    /// The last failed distraction check, shown on the Focus screen.
+    nudge_error: Option<String>,
+    focus: FocusScreen,
     screen: Screen,
     status: StatusBar,
     tasks: TasksScreen,
@@ -102,6 +126,7 @@ pub struct WfhApp<S> {
 enum Screen {
     Tasks,
     Planning,
+    Focus,
     Reports,
     Categories,
     Settings,
@@ -121,6 +146,8 @@ pub struct Services {
     pub clock: Arc<dyn Clock>,
     pub autostart: Box<dyn Autostart>,
     pub notifier: Box<dyn Notifier>,
+    /// Reads the window in front, for distraction nudges.
+    pub foreground: Box<dyn ForegroundWatcher>,
     /// Fonts to use instead of egui's built-in one, e.g. Segoe UI.
     pub fonts: Option<UiFonts>,
     /// `None` in development builds.
@@ -149,8 +176,13 @@ impl<S: Store> WfhApp<S> {
             clock: services.clock,
             autostart: services.autostart,
             notifier: services.notifier,
+            foreground: services.foreground,
             commands,
             last_tick: None,
+            last_poll: None,
+            nudges: Nudges::default(),
+            nudge_error: None,
+            focus: FocusScreen::default(),
             screen: Screen::Tasks,
             status: StatusBar::default(),
             tasks: TasksScreen::default(),
@@ -175,12 +207,35 @@ impl<S: Store> eframe::App for WfhApp<S> {
     /// Runs even while the window is hidden, so the tray, the hotkey and
     /// reminders keep working from the tray.
     fn logic(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
-        if ctx.input(|i| i.viewport().close_requested()) && !self.quitting.load(Ordering::SeqCst) {
-            ctx.send_viewport_cmd(ViewportCommand::CancelClose);
-            ctx.send_viewport_cmd(ViewportCommand::Visible(false));
+        if ctx.input(|i| i.viewport().close_requested()) {
+            if self.quitting.load(Ordering::SeqCst) {
+                // Quitting stops the watching: close an open distraction now.
+                // Best effort: one left open is ended at the last heartbeat next start.
+                let _ = self.nudges.stop(&self.store, self.clock.as_ref());
+            } else {
+                ctx.send_viewport_cmd(ViewportCommand::CancelClose);
+                ctx.send_viewport_cmd(ViewportCommand::Visible(false));
+            }
         }
         while let Ok(ShellCommand::ToggleMeeting) = self.commands.try_recv() {
             self.status.toggle_meeting(&self.store);
+        }
+        // Before the reminder tick, so the first poll still sees the last
+        // run's heartbeat (to end a distraction a crash left open).
+        if self.last_poll.is_none_or(|t| t.elapsed() >= POLL_EVERY) {
+            self.last_poll = Some(Instant::now());
+            let settings = self.store.load().unwrap_or_default();
+            self.nudge_error = self
+                .nudges
+                .poll(
+                    &self.store,
+                    &settings,
+                    self.clock.as_ref(),
+                    self.foreground.as_ref(),
+                    self.notifier.as_ref(),
+                )
+                .err()
+                .map(|e| e.to_string());
         }
         if self.last_tick.is_none_or(|t| t.elapsed() >= TICK_EVERY) {
             self.last_tick = Some(Instant::now());
@@ -195,7 +250,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
             );
         }
         self.updates.tick(ctx);
-        ctx.request_repaint_after(TICK_EVERY);
+        ctx.request_repaint_after(POLL_EVERY);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -250,6 +305,9 @@ impl<S: Store> eframe::App for WfhApp<S> {
                     self.planning
                         .ui(ui, &self.store, &settings, self.clock.as_ref());
                 }
+                Screen::Focus => {
+                    self.focus.ui(ui, &self.store, self.nudge_error.as_deref());
+                }
                 Screen::Reports => self.reports.ui(
                     ui,
                     &self.store,
@@ -284,6 +342,7 @@ impl<S: Store> WfhApp<S> {
         let items = [
             (Screen::Tasks, Icon::Star, p.star, "Today", Some(open)),
             (Screen::Planning, Icon::Target, p.accent, "Planning", None),
+            (Screen::Focus, Icon::Focus, p.accent, "Focus", None),
             (Screen::Reports, Icon::Doc, p.accent, "Reports", None),
             (Screen::Categories, Icon::Tag, p.accent, "Categories", None),
             (Screen::Settings, Icon::Gear, p.secondary, "Settings", None),

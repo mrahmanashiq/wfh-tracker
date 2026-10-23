@@ -2,6 +2,7 @@
 
 mod block;
 mod category;
+mod distraction;
 mod session;
 mod settings;
 mod target;
@@ -22,6 +23,7 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("migrations/002_tasks.sql")),
         M::up(include_str!("migrations/003_tracking.sql")),
         M::up(include_str!("migrations/004_planning.sql")),
+        M::up(include_str!("migrations/005_nudges.sql")),
     ])
 }
 

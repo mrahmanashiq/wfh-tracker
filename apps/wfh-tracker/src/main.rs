@@ -1,5 +1,5 @@
 //! Wires the real adapters (SQLite, OS clock, tray, hotkey, notifications,
-//! autostart) into the UI.
+//! autostart, foreground window) into the UI.
 
 // No console window behind the app in release builds on Windows.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
@@ -8,10 +8,11 @@ use std::error::Error;
 use std::sync::Arc;
 
 use eframe::egui::{self, IconData, ViewportBuilder};
+use wt_core::DistractionRepo;
 use wt_core::{Autostart, CategoryRepo, SettingsRepo};
 use wt_platform::{
-    DesktopNotifier, LoginAutostart, MINIMIZED_FLAG, MeetingHotkey, ReleaseUpdater,
-    SystemClipboard, SystemClock, Tray, TrayAction, app_icon_rgba,
+    DesktopNotifier, LoginAutostart, MINIMIZED_FLAG, MeetingHotkey, OsForegroundWatcher,
+    ReleaseUpdater, SystemClipboard, SystemClock, Tray, TrayAction, app_icon_rgba,
 };
 use wt_storage::SqliteStore;
 use wt_ui_egui::{Services, UiFonts, WfhApp};
@@ -33,6 +34,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let clock = Arc::new(SystemClock);
     let store = SqliteStore::open(&dir.join("wfh-tracker.db"), clock.clone())?;
     store.seed_defaults()?;
+    store.seed_default_rules()?;
 
     // Keep the OS entry in line with the saved preference (on by default).
     // Debug builds leave it alone so `cargo run` never registers target/debug.
@@ -67,6 +69,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 clock,
                 autostart: Box::new(autostart),
                 notifier: Box::new(DesktopNotifier),
+                foreground: Box::new(OsForegroundWatcher),
                 fonts: segoe_ui(),
                 updater: release_updater(),
                 clipboard: Box::new(SystemClipboard),
