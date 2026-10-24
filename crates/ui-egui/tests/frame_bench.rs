@@ -288,6 +288,22 @@ fn system_fonts() -> Option<UiFonts> {
 /// The whole app on a fresh store: five weeks of data when `seeded`, else
 /// only the default categories (to show the empty states).
 fn app(name: &str, seeded: bool) -> Harness<'static, WfhApp<SqliteStore>> {
+    app_with(name, seeded, SIZE, 1.0).0
+}
+
+/// [`app`] at a chosen size and scale, with its clock and database file so a
+/// test can move time on and write through a second connection.
+fn app_with(
+    name: &str,
+    seeded: bool,
+    size: egui::Vec2,
+    pixels_per_point: f32,
+) -> (
+    Harness<'static, WfhApp<SqliteStore>>,
+    Arc<FixedClock>,
+    PathBuf,
+) {
+    let path = db_path(name);
     let clock = Arc::new(FixedClock::new(
         FIRST_DAY
             .parse::<jiff::civil::Date>()
@@ -297,25 +313,30 @@ fn app(name: &str, seeded: bool) -> Harness<'static, WfhApp<SqliteStore>> {
             .timestamp(),
         TimeZone::UTC,
     ));
-    let store = SqliteStore::open(&db_path(name), clock.clone()).unwrap();
+    let store = SqliteStore::open(&path, clock.clone()).unwrap();
     if seeded {
         seed(&store, &clock);
     } else {
         store.seed_defaults().unwrap();
         goto(&clock, NOW.parse().unwrap());
     }
-    Harness::builder().with_size(SIZE).build_eframe(move |cc| {
-        let services = Services {
-            clock: clock as Arc<dyn Clock>,
-            autostart: Box::new(Quiet),
-            notifier: Box::new(Quiet),
-            foreground: Box::new(Quiet),
-            fonts: system_fonts(),
-            updater: None,
-            clipboard: Box::new(Quiet),
-        };
-        WfhApp::new(&cc.egui_ctx, store, services, false).0
-    })
+    let app_clock = clock.clone();
+    let harness = Harness::builder()
+        .with_size(size)
+        .with_pixels_per_point(pixels_per_point)
+        .build_eframe(move |cc| {
+            let services = Services {
+                clock: app_clock as Arc<dyn Clock>,
+                autostart: Box::new(Quiet),
+                notifier: Box::new(Quiet),
+                foreground: Box::new(Quiet),
+                fonts: system_fonts(),
+                updater: None,
+                clipboard: Box::new(Quiet),
+            };
+            WfhApp::new(&cc.egui_ctx, store, services, false).0
+        });
+    (harness, clock, path)
 }
 
 fn open(h: &mut Harness<'_, WfhApp<SqliteStore>>, screen: &str) {
@@ -380,6 +401,85 @@ fn screenshots() {
             today_states(&mut h, &dir);
         }
     }
+    header_states(&dir);
+}
+
+/// The header strip in each state, light and dark, at 2x: running, on a
+/// break, in a meeting, idle, past the target, near and past the soft
+/// ceiling, and
+/// at the narrowest window. Time moves on through the clock, with a
+/// heartbeat each step so nothing looks like a closed app.
+fn header_states(dir: &std::path::Path) {
+    const STRIP: egui::Vec2 = egui::vec2(1040.0, 120.0);
+    let (mut h, clock, path) = app_with("header", true, STRIP, 2.0);
+    let side = SqliteStore::open(&path, clock.clone()).unwrap();
+    let task = side.running().unwrap().unwrap().task_id.unwrap();
+    let later = |minutes: i64| {
+        clock.advance(SignedDuration::from_mins(minutes));
+        side.beat().unwrap();
+    };
+    let office = || {
+        let now = clock.now();
+        let sessions = side
+            .sessions_since(now - SignedDuration::from_hours(48))
+            .unwrap();
+        wt_core::office_time(&sessions, clock.today(), &clock.time_zone(), now).as_mins()
+    };
+    h.set_render_cursor(false);
+    h.run_steps(4);
+    later(1);
+    header_shots(&mut h, dir, "running");
+
+    h.get_by_label("Take break").click();
+    h.run_steps(4);
+    later(3);
+    header_shots(&mut h, dir, "break");
+    h.get_by_label_contains("Resume").click();
+    h.run_steps(4);
+
+    h.get_by_label("Meeting").click();
+    h.run_steps(4);
+    later(12);
+    header_shots(&mut h, dir, "meeting");
+    h.get_by_label("End meeting").click();
+    h.run_steps(4);
+
+    h.get_all_by_label("Stop").next().unwrap().click();
+    h.run_steps(4);
+    later(1);
+    header_shots(&mut h, dir, "idle");
+
+    side.start(TimerTarget::Task(task)).unwrap();
+    while office() < 8 * 60 + 12 {
+        later(5);
+    }
+    header_shots(&mut h, dir, "past-target");
+    while office() < 8 * 60 + 40 {
+        later(5);
+    }
+    header_shots(&mut h, dir, "near-ceiling");
+    while office() < 9 * 60 + 25 {
+        later(5);
+    }
+    header_shots(&mut h, dir, "past-ceiling");
+
+    h.set_size(egui::vec2(760.0, STRIP.y));
+    header_shots(&mut h, dir, "narrow");
+    side.stop().unwrap();
+    later(1);
+    header_shots(&mut h, dir, "narrow-idle");
+}
+
+/// `header-{name}-light.png` and `-dark.png`, with the pointer parked on the
+/// sidebar.
+fn header_shots(h: &mut Harness<'_, WfhApp<SqliteStore>>, dir: &std::path::Path, name: &str) {
+    for (theme, suffix) in [(egui::Theme::Light, "light"), (egui::Theme::Dark, "dark")] {
+        h.ctx.set_theme(theme);
+        h.hover_at(egui::pos2(20.0, 110.0));
+        h.run_steps(30);
+        save(h, &dir.join(format!("header-{name}-{suffix}.png")));
+    }
+    h.ctx.set_theme(egui::Theme::Light);
 }
 
 /// The Today list's interactive states in both themes: a hovered row, a
