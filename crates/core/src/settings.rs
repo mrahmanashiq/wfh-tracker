@@ -13,6 +13,32 @@ pub struct Settings {
     pub week_start: Weekday,
     pub workdays: Vec<Weekday>,
     pub autostart: bool,
+    pub appearance: Appearance,
+}
+
+/// Light or dark window, or whichever Windows uses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Appearance {
+    #[default]
+    Light,
+    Dark,
+    System,
+}
+
+impl Appearance {
+    pub const ALL: [Self; 3] = [Self::Light, Self::Dark, Self::System];
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Light => "light",
+            Self::Dark => "dark",
+            Self::System => "system",
+        }
+    }
+
+    fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.as_str() == s)
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
@@ -36,6 +62,7 @@ impl Default for Settings {
             week_start: Sunday,
             workdays: vec![Sunday, Monday, Tuesday, Wednesday, Thursday],
             autostart: true,
+            appearance: Appearance::Light,
         }
     }
 }
@@ -77,6 +104,7 @@ impl Settings {
             ("week_start", weekday_str(self.week_start).to_owned()),
             ("workdays", workdays.join(",")),
             ("autostart", self.autostart.to_string()),
+            ("appearance", self.appearance.as_str().to_owned()),
         ]
     }
 
@@ -111,6 +139,7 @@ impl Settings {
                         .collect::<Result<_, _>>()?;
                 }
                 "autostart" => s.autostart = value.parse().map_err(|_| invalid())?,
+                "appearance" => s.appearance = Appearance::parse(value).ok_or_else(invalid)?,
                 _ => {}
             }
         }

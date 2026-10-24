@@ -6,7 +6,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use jiff::civil::Weekday::*;
 use wt_core::repo::RepoResult;
-use wt_core::{Autostart, AutostartError, Settings, SettingsRepo};
+use wt_core::{Appearance, Autostart, AutostartError, Settings, SettingsRepo};
 use wt_ui_egui::SettingsScreen;
 
 #[derive(Default)]
@@ -117,4 +117,17 @@ fn ceiling_below_target_shows_the_error_and_saves_nothing() {
 
     h.get_by_label("office soft ceiling must be at least the office target");
     assert_eq!(*h.state().repo.0.borrow(), Settings::default());
+}
+
+#[test]
+fn appearance_defaults_to_light_and_dark_can_be_chosen() {
+    let mut h = harness();
+    assert_eq!(h.state().repo.load().unwrap().appearance, Appearance::Light);
+
+    h.get_by_label("Dark").click();
+    h.run();
+    h.get_by_label("Save").click();
+    h.run();
+
+    assert_eq!(h.state().repo.load().unwrap().appearance, Appearance::Dark);
 }

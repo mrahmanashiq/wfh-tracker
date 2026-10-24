@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use jiff::Timestamp;
 use jiff::civil::Weekday::*;
-use wt_core::{FixedClock, Settings, SettingsRepo};
+use wt_core::{Appearance, FixedClock, Settings, SettingsRepo};
 use wt_storage::SqliteStore;
 
 fn store() -> SqliteStore {
@@ -28,6 +28,7 @@ fn fresh_database_loads_the_spec_defaults() {
             week_start: Sunday,
             workdays: vec![Sunday, Monday, Tuesday, Wednesday, Thursday],
             autostart: true,
+            appearance: Appearance::Light,
         }
     );
 }
@@ -45,6 +46,7 @@ fn saved_settings_load_back() {
         week_start: Monday,
         workdays: vec![Monday, Tuesday, Wednesday, Thursday, Friday],
         autostart: false,
+        appearance: Appearance::Dark,
     };
 
     store.save(&mine).unwrap();

@@ -139,6 +139,8 @@ pub struct WfhApp<S> {
     updates: UpdateController,
     quitting: Arc<AtomicBool>,
     start: Start,
+    /// The appearance last applied, so it is only set when it changes.
+    appearance: Option<wt_core::Appearance>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -220,6 +222,7 @@ impl<S: Store> WfhApp<S> {
             } else {
                 Start::Shown
             },
+            appearance: None,
         };
         (app, handle)
     }
@@ -300,6 +303,10 @@ impl<S: Store> eframe::App for WfhApp<S> {
         ui.ctx().request_repaint_after(Duration::from_secs(1));
 
         let settings = self.store.load().unwrap_or_default();
+        if self.appearance != Some(settings.appearance) {
+            self.appearance = Some(settings.appearance);
+            theme::apply(ui.ctx(), settings.appearance);
+        }
         let blocks = wt_core::BlockRepo::blocks(&self.store).unwrap_or_default();
         let p = theme::palette(ui);
         egui::Panel::left("nav")

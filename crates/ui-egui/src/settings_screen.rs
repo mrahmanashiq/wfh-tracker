@@ -1,6 +1,6 @@
 use egui::{ComboBox, DragValue, Grid, Ui};
 use jiff::civil::Weekday;
-use wt_core::{Autostart, Settings, SettingsRepo};
+use wt_core::{Appearance, Autostart, Settings, SettingsRepo};
 
 const DAYS: [(Weekday, &str); 7] = [
     (Weekday::Sunday, "Sun"),
@@ -107,6 +107,14 @@ impl SettingsScreen {
                     ui.label("");
                     ui.checkbox(&mut d.autostart, "Start at login");
                     ui.end_row();
+
+                    ui.label("Appearance");
+                    ui.horizontal(|ui| {
+                        for choice in Appearance::ALL {
+                            ui.selectable_value(&mut d.appearance, choice, appearance_name(choice));
+                        }
+                    });
+                    ui.end_row();
                 });
         });
 
@@ -144,4 +152,12 @@ fn day_name(day: Weekday) -> &'static str {
     DAYS.iter()
         .find(|(d, _)| *d == day)
         .map_or("Sun", |(_, n)| n)
+}
+
+fn appearance_name(appearance: Appearance) -> &'static str {
+    match appearance {
+        Appearance::Light => "Light",
+        Appearance::Dark => "Dark",
+        Appearance::System => "Follow Windows",
+    }
 }

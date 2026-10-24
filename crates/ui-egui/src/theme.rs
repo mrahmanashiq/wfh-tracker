@@ -202,8 +202,8 @@ pub fn card_shadow(p: &Palette) -> Shadow {
     }
 }
 
-/// Installs fonts and both themes. The app follows the system's light or
-/// dark setting.
+/// Installs fonts and both themes, starting light until the stored
+/// appearance is applied.
 pub fn install(ctx: &Context, fonts: Option<UiFonts>) {
     ctx.set_fonts(font_definitions(fonts));
     for (theme, p) in [(Theme::Light, LIGHT), (Theme::Dark, DARK)] {
@@ -223,7 +223,16 @@ pub fn install(ctx: &Context, fonts: Option<UiFonts>) {
             style.animation_time = FADE;
         });
     }
-    ctx.set_theme(ThemePreference::System);
+    apply(ctx, wt_core::Appearance::Light);
+}
+
+/// Switches to the chosen appearance.
+pub fn apply(ctx: &Context, appearance: wt_core::Appearance) {
+    ctx.set_theme(match appearance {
+        wt_core::Appearance::Light => ThemePreference::Light,
+        wt_core::Appearance::Dark => ThemePreference::Dark,
+        wt_core::Appearance::System => ThemePreference::System,
+    });
 }
 
 fn font_definitions(fonts: Option<UiFonts>) -> FontDefinitions {
