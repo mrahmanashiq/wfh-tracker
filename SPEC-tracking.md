@@ -66,7 +66,7 @@ Session table: `id, task_id NULL → task, category_id → category, kind, start
 ## As built (2026-10-22)
 
 - A session's kind reuses `CategoryKind`, so there's no separate `SessionKind`. Office time is `office_time(sessions, day, tz, now) -> SignedDuration`. It takes `now` because a running session counts up to now.
-- A task's own break interval is edited in its Rename form (top-level tasks only). Sub-tasks use their parent's interval.
+- A task's own break interval is edited in its Rename form (top-level tasks only). Sub-tasks use their parent's interval. It is a tag-style drop-down beside the category: "Default break (Nm)" (no value of its own, so the Settings interval applies) or a preset of 15, 20, 25, 30, 45, 50, 60 or 90 minutes; a task's own value that is not a preset is listed too, so it is never lost.
 - A unique index in SQLite also enforces "at most one running session".
 - Toasts carry text only. The Resume button lives in the status bar.
 

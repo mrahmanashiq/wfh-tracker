@@ -402,6 +402,38 @@ fn screenshots() {
         }
     }
     header_states(&dir);
+    zoomed(&dir);
+}
+
+/// Every screen in light mode at 2x, to judge text placement up close, and
+/// the inline edit card with its break drop-down closed and open.
+fn zoomed(dir: &std::path::Path) {
+    let (mut h, _, _) = app_with("zoomed", true, SIZE, 2.0);
+    h.set_render_cursor(false);
+    h.run_steps(4);
+    h.ctx.set_theme(egui::Theme::Light);
+    for screen in SCREENS {
+        open(&mut h, screen);
+        h.hover_at(egui::pos2(20.0, SIZE.y - 10.0));
+        h.run_steps(30);
+        save(
+            &mut h,
+            &dir.join(format!("2x-{}-light.png", screen.to_lowercase())),
+        );
+    }
+    open(&mut h, "Today");
+    let row = h.get_by_label("Checkout redesign").rect();
+    h.hover_at(row.center() + egui::vec2(300.0, 0.0));
+    h.run_steps(30);
+    h.get_by_label("Edit").click();
+    h.hover_at(egui::pos2(20.0, SIZE.y - 10.0));
+    h.run_steps(30);
+    save(&mut h, &dir.join("2x-edit-card-light.png"));
+    if h.query_by_label("Break interval").is_some() {
+        h.get_by_label("Break interval").click();
+        h.run_steps(30);
+        save(&mut h, &dir.join("2x-edit-card-break-open-light.png"));
+    }
 }
 
 /// The header strip in each state, light and dark, at 2x: running, on a

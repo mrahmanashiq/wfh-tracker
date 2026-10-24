@@ -5,7 +5,7 @@ use std::sync::Arc;
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use jiff::Timestamp;
-use wt_core::{CategoryRepo, FixedClock, SessionRepo, TaskRepo};
+use wt_core::{CategoryRepo, FixedClock, SessionRepo, SettingsRepo, TaskRepo};
 use wt_storage::SqliteStore;
 use wt_ui_egui::TasksScreen;
 
@@ -22,7 +22,10 @@ fn harness() -> Harness<'static, State> {
     let store = SqliteStore::open_in_memory(clock.clone()).unwrap();
     store.seed_defaults().unwrap();
     Harness::new_ui_state(
-        |ui, s: &mut State| s.screen.ui(ui, &s.store, s.clock.as_ref()),
+        |ui, s: &mut State| {
+            let settings = s.store.load().unwrap();
+            s.screen.ui(ui, &s.store, &settings, s.clock.as_ref());
+        },
         State {
             store,
             clock,
@@ -250,4 +253,80 @@ fn the_inline_edit_card_saves_a_new_category_for_a_project() {
     let tasks = store.list_live().unwrap();
     assert!(tasks.iter().all(|t| t.category_id == learning.meta.id));
     h.get_by_label("Learning");
+}
+
+/// The stored break interval of the task named `title`.
+fn break_interval(h: &Harness<'_, State>, title: &str) -> Option<u32> {
+    let tasks = h.state().store.list_live().unwrap();
+    tasks
+        .into_iter()
+        .find(|t| t.title == title)
+        .unwrap()
+        .break_interval_min
+}
+
+/// Opens the edit card of `title` and its break drop-down.
+fn open_break_picker(h: &mut Harness<'_, State>, title: &str) {
+    row_icon(h, title, "Edit");
+    h.get_by_label("Break interval").click();
+    h.run();
+}
+
+#[test]
+fn choosing_a_break_preset_saves_the_tasks_own_interval() {
+    let mut h = checkout_with_two_subtasks();
+
+    open_break_picker(&mut h, "Checkout");
+    // The default names the Settings value.
+    h.get_by_label("Default break (25m)");
+    h.get_by_label("Break every 45m").click();
+    h.run();
+    h.get_by_label("Save").click();
+    h.run();
+
+    assert_eq!(break_interval(&h, "Checkout"), Some(45));
+}
+
+#[test]
+fn choosing_the_default_break_clears_the_tasks_own_interval() {
+    let mut h = checkout_with_two_subtasks();
+    let id = h.state().store.list_live().unwrap()[0].meta.id;
+    h.state().store.set_break_interval(id, Some(50)).unwrap();
+    h.run();
+
+    open_break_picker(&mut h, "Checkout");
+    h.get_by_label("Default break (25m)").click();
+    h.run();
+    h.get_by_label("Save").click();
+    h.run();
+
+    assert_eq!(break_interval(&h, "Checkout"), None);
+}
+
+#[test]
+fn a_custom_break_interval_is_offered_and_kept() {
+    let mut h = checkout_with_two_subtasks();
+    let id = h.state().store.list_live().unwrap()[0].meta.id;
+    h.state().store.set_break_interval(id, Some(37)).unwrap();
+    h.run();
+
+    open_break_picker(&mut h, "Checkout");
+    // Not a preset, yet listed, so choosing another value is never forced.
+    h.get_by_label("Break every 37m");
+    // Close the menu without choosing, then save: the value survives.
+    h.get_by_label("Break interval").click();
+    h.run();
+    h.get_by_label("Save").click();
+    h.run();
+
+    assert_eq!(break_interval(&h, "Checkout"), Some(37));
+}
+
+#[test]
+fn a_sub_task_has_no_break_picker() {
+    let mut h = checkout_with_two_subtasks();
+
+    row_icon(&mut h, "Validation", "Edit");
+
+    assert!(h.query_by_label("Break interval").is_none());
 }

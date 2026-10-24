@@ -1,11 +1,11 @@
-use egui::{ComboBox, TextEdit, Ui};
+use egui::{ComboBox, Ui};
 use wt_core::repo::RepoResult;
 use wt_core::{Category, CategoryKind, CategoryRepo, Id, NewCategory, Rgb};
 
 use crate::theme::{size, space};
 use crate::widgets::{
-    DeleteClick, Icon, card, color_dot, column, delete_buttons, empty_state, icon_button, list_row,
-    message, pill, screen_title, text_button, truncated,
+    DeleteClick, Icon, card, color_dot, column, delete_buttons, empty_state, field, icon_button,
+    list_row, message, pill, screen_title, text_button, truncated,
 };
 
 /// Add, edit and delete categories. Deleting one still used by tasks is refused.
@@ -56,7 +56,7 @@ impl CategoriesScreen {
 
         let mut action = None;
         ui.horizontal(|ui| {
-            ui.add(TextEdit::singleline(&mut self.new_name).hint_text("Name"))
+            ui.add(field(&mut self.new_name).hint_text("Name"))
                 .accessible_name("Category name");
             ComboBox::from_id_salt("new_category_kind")
                 .selected_text(kind_label(self.new_kind))
@@ -101,7 +101,7 @@ impl CategoriesScreen {
         list_row(ui, id, |ui| {
             color_dot(ui, cat.color);
             if let Some((_, name, color)) = self.editing.as_mut().filter(|e| e.0 == id) {
-                ui.add(TextEdit::singleline(name).desired_width(size::LABEL_COLUMN))
+                ui.add(field(name).desired_width(size::LABEL_COLUMN))
                     .accessible_name("Edit category name");
                 ui.color_edit_button_srgb(color)
                     .accessible_name("Edit colour");

@@ -338,7 +338,9 @@ impl<S: Store> eframe::App for WfhApp<S> {
                     .inner_margin(egui::Margin::symmetric(space::XXL as i8, space::XL as i8)),
             )
             .show(ui, |ui| match self.screen {
-                Screen::Tasks => self.tasks.ui(ui, &self.store, self.clock.as_ref()),
+                Screen::Tasks => self
+                    .tasks
+                    .ui(ui, &self.store, &settings, self.clock.as_ref()),
                 Screen::Dashboard => {
                     self.dashboard
                         .ui(ui, &self.store, &settings, self.clock.as_ref());

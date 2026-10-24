@@ -1,10 +1,10 @@
-use egui::{ComboBox, RichText, TextEdit, Ui};
+use egui::{ComboBox, RichText, Ui};
 use wt_core::repo::RepoResult;
 use wt_core::{DistractionRuleRepo, Id, MatchOn, RuleDraft};
 
 use crate::theme::{palette, size, space};
 use crate::widgets::{
-    DeleteClick, Icon, card, column, delete_buttons, empty_state, list_row, message, pill,
+    DeleteClick, Icon, card, column, delete_buttons, empty_state, field, list_row, message, pill,
     screen_title, section_label,
 };
 
@@ -92,7 +92,7 @@ impl FocusScreen {
         ui.add_space(space::MD);
         ui.horizontal(|ui| {
             ui.add(
-                TextEdit::singleline(&mut self.draft.pattern)
+                field(&mut self.draft.pattern)
                     .hint_text("e.g. Twitter")
                     .desired_width(size::FIELD),
             )

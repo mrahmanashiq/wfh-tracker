@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use egui::epaint::text::{FontData, FontDefinitions};
+use egui::epaint::text::{FontData, FontDefinitions, FontTweak};
 use egui::style::{Selection, WidgetVisuals, Widgets};
 use egui::{
     Color32, Context, CornerRadius, FontFamily, FontId, Shadow, Stroke, TextStyle, Theme,
@@ -88,6 +88,8 @@ pub mod size {
     pub const EMPTY_ICON: f32 = 44.0;
     /// Drop-downs such as the category picker.
     pub const PICKER: f32 = 130.0;
+    /// The tallest a drop-down's menu grows before it scrolls.
+    pub const MENU: f32 = 400.0;
     /// Single-line text fields.
     pub const FIELD: f32 = 180.0;
     /// Thin progress bars.
@@ -345,11 +347,9 @@ fn font_definitions(fonts: Option<UiFonts>) -> FontDefinitions {
     let mut semibold_chain = fallback.clone();
     if let Some(fonts) = fonts {
         defs.font_data
-            .insert("ui".into(), Arc::new(FontData::from_owned(fonts.regular)));
-        defs.font_data.insert(
-            "ui-semibold".into(),
-            Arc::new(FontData::from_owned(fonts.semibold)),
-        );
+            .insert("ui".into(), Arc::new(centred_font(fonts.regular)));
+        defs.font_data
+            .insert("ui-semibold".into(), Arc::new(centred_font(fonts.semibold)));
         if let Some(proportional) = defs.families.get_mut(&FontFamily::Proportional) {
             proportional.insert(0, "ui".into());
         }
@@ -367,6 +367,54 @@ fn font_definitions(fonts: Option<UiFonts>) -> FontDefinitions {
     }
     defs.families.insert(semibold(), semibold_chain);
     defs
+}
+
+/// `bytes` as a font whose capitals sit in the middle of its row, so text
+/// centred by its row (labels, buttons, drop-downs, painted capsules) looks
+/// centred. egui puts the baseline `ascent` below the row's top; with Segoe
+/// UI's tall ascent that leaves capitals about 0.06 em low, which shows as
+/// text sitting low in pills and capsules. The shift is visual only: layout,
+/// row heights and hit areas don't change.
+fn centred_font(bytes: Vec<u8>) -> FontData {
+    let y_offset_factor = cap_centre_offset(&bytes).map_or(0.0, |offset| -offset);
+    FontData::from_owned(bytes).tweak(FontTweak {
+        y_offset_factor,
+        ..FontTweak::default()
+    })
+}
+
+/// How far below its row's middle a font's capitals are centred, in ems,
+/// read from its `head`, `hhea` and `OS/2` tables the way egui lays text
+/// out (baseline at the ascent; row = ascent + descent + line gap). `None`
+/// when the tables can't be read.
+fn cap_centre_offset(font: &[u8]) -> Option<f32> {
+    let u16_at = |at: usize| Some(u16::from_be_bytes([*font.get(at)?, *font.get(at + 1)?]));
+    let i16_at = |at: usize| u16_at(at).map(|v| v as i16 as f32);
+    let table = |tag: &[u8; 4]| -> Option<usize> {
+        let count = usize::from(u16_at(4)?);
+        (0..count).find_map(|i| {
+            let record = 12 + 16 * i;
+            (font.get(record..record + 4)? == tag).then(|| {
+                let at = font.get(record + 8..record + 12)?;
+                usize::try_from(u32::from_be_bytes([at[0], at[1], at[2], at[3]])).ok()
+            })?
+        })
+    };
+    let units = f32::from(u16_at(table(b"head")? + 18)?);
+    let os2 = table(b"OS/2")?;
+    let hhea = table(b"hhea")?;
+    // OS/2 fsSelection bit 7: USE_TYPO_METRICS.
+    let typo = u16_at(os2 + 62)? & (1 << 7) != 0;
+    let metrics = if typo { os2 + 68 } else { hhea + 4 };
+    let (ascent, descent, gap) = (i16_at(metrics)?, i16_at(metrics + 2)?, i16_at(metrics + 4)?);
+    // sCapHeight exists from OS/2 version 2.
+    let cap = if u16_at(os2)? >= 2 {
+        i16_at(os2 + 88)?
+    } else {
+        0.7 * units
+    };
+    let row = ascent - descent + gap;
+    (units > 0.0 && row > 0.0).then(|| ((ascent - cap / 2.0) - row / 2.0) / units)
 }
 
 fn visuals(theme: Theme, p: Palette) -> Visuals {
@@ -416,4 +464,57 @@ fn visuals(theme: Theme, p: Palette) -> Visuals {
     v.window_corner_radius = CornerRadius::same(radius::LG);
     v.menu_corner_radius = CornerRadius::same(radius::MD);
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cap_centre_offset;
+
+    /// A font file holding only the tables [`cap_centre_offset`] reads, with
+    /// Segoe UI's numbers: 2048 units, ascent 2210, descent 514, cap 1434.
+    fn font(use_typo: bool) -> Vec<u8> {
+        let mut head = vec![0u8; 54];
+        head[18..20].copy_from_slice(&2048u16.to_be_bytes());
+        let mut hhea = vec![0u8; 36];
+        hhea[4..6].copy_from_slice(&2210i16.to_be_bytes());
+        hhea[6..8].copy_from_slice(&(-514i16).to_be_bytes());
+        let mut os2 = vec![0u8; 96];
+        os2[0..2].copy_from_slice(&4u16.to_be_bytes());
+        if use_typo {
+            os2[62..64].copy_from_slice(&(1u16 << 7).to_be_bytes());
+        }
+        os2[68..70].copy_from_slice(&1434i16.to_be_bytes());
+        os2[70..72].copy_from_slice(&(-614i16).to_be_bytes());
+        os2[88..90].copy_from_slice(&1434i16.to_be_bytes());
+        let tables: [(&[u8; 4], Vec<u8>); 3] = [(b"head", head), (b"hhea", hhea), (b"OS/2", os2)];
+        let mut file = vec![0u8; 12 + 16 * tables.len()];
+        file[4..6].copy_from_slice(&3u16.to_be_bytes());
+        for (i, (tag, data)) in tables.into_iter().enumerate() {
+            let record = 12 + 16 * i;
+            let at = u32::try_from(file.len()).unwrap_or_default();
+            file[record..record + 4].copy_from_slice(tag);
+            file[record + 8..record + 12].copy_from_slice(&at.to_be_bytes());
+            file.extend(data);
+        }
+        file
+    }
+
+    #[test]
+    fn segoe_capitals_sit_low_in_their_row_by_about_six_hundredths_of_an_em() {
+        let offset = cap_centre_offset(&font(false)).unwrap_or_default();
+        assert!((offset - 0.064).abs() < 0.001, "{offset}");
+    }
+
+    #[test]
+    fn typo_metrics_are_used_when_the_font_asks() {
+        // Typo ascent 1434, descent 614: capitals fill the ascent, so their
+        // middle is 0.35 em down a 1.0 em row.
+        let offset = cap_centre_offset(&font(true)).unwrap_or_default();
+        assert!((offset - (-0.15)).abs() < 0.001, "{offset}");
+    }
+
+    #[test]
+    fn unreadable_bytes_give_no_offset() {
+        assert_eq!(cap_centre_offset(b"not a font"), None);
+    }
 }

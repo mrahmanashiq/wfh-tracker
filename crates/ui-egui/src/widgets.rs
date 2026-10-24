@@ -207,7 +207,7 @@ pub fn tag(ui: &mut Ui, name: &str, color: Color32) -> Response {
 
 /// Restyles `ui` so a [`egui::ComboBox`] in it looks like a [`tag`]: a
 /// small muted capsule that fits its text.
-pub fn tag_style(ui: &mut Ui) {
+fn tag_style(ui: &mut Ui) {
     let p = palette(ui);
     let style = ui.style_mut();
     style.spacing.button_padding = vec2(space::SM, 0.0);
@@ -228,6 +228,28 @@ pub fn tag_style(ui: &mut Ui) {
         v.corner_radius = CornerRadius::same(radius::TAG);
         v.fg_stroke = Stroke::new(stroke::HAIRLINE, p.secondary);
     }
+}
+
+/// A drop-down that looks like a [`tag`]: a small muted capsule showing
+/// `selected`, named `name` for accessibility, with `options` in its menu.
+pub fn tag_picker<R>(
+    ui: &mut Ui,
+    id_salt: impl egui::AsIdSalt,
+    selected: &str,
+    name: &str,
+    options: impl FnOnce(&mut Ui) -> R,
+) -> Response {
+    ui.scope(|ui| {
+        tag_style(ui);
+        egui::ComboBox::from_id_salt(id_salt)
+            .selected_text(selected)
+            .width(0.0)
+            .height(size::MENU)
+            .show_ui(ui, options)
+            .response
+            .accessible_name(name)
+    })
+    .inner
 }
 
 /// The running task's live time and its stop control: a small blue capsule.
@@ -486,6 +508,12 @@ pub fn screen_header(ui: &mut Ui, icon: Icon, color: Color32, title: &str, subti
         ui.label(RichText::new(subtitle).color(palette(ui).secondary));
     }
     ui.add_space(space::LG);
+}
+
+/// A one-line text field with its text centred top to bottom, like the
+/// buttons and drop-downs beside it (egui puts a field's text at the top).
+pub fn field(text: &mut String) -> egui::TextEdit<'_> {
+    egui::TextEdit::singleline(text).align(Align2::LEFT_CENTER)
 }
 
 /// A frameless text button, optionally in the accent colour.
@@ -848,10 +876,7 @@ pub fn running_title(
     let height = title_height + subtitle.as_ref().map_or(0.0, |s| s.size().y);
     let top = rect.center().y - height / 2.0;
     let painter = ui.painter();
-    let dot_center = pos2(
-        rect.left() + size::ICON / 2.0,
-        top + title_height / 2.0 + 0.5,
-    );
+    let dot_center = pos2(rect.left() + size::ICON / 2.0, top + title_height / 2.0);
     let r = size::HEADER_DOT / 2.0;
     match dot {
         Some(color) => {

@@ -1,4 +1,4 @@
-use egui::{ComboBox, DragValue, RichText, TextEdit, Ui};
+use egui::{ComboBox, DragValue, RichText, Ui};
 use wt_core::repo::RepoResult;
 use wt_core::{
     BlockDraft, Category, CategoryKind, Clock, Id, Period, Settings, Target, Weekdays, clock_text,
@@ -9,7 +9,7 @@ use crate::PlanStore;
 use crate::theme::{palette, size, space};
 use crate::widgets::{
     DeleteClick, Icon, card, color_dot, color32, column, day_name, delete_buttons, empty_state,
-    icon_button, list_row, message, pill, progress_bar, screen_title, section_label,
+    field, icon_button, list_row, message, pill, progress_bar, screen_title, section_label,
     target_progress_text, truncated,
 };
 
@@ -239,7 +239,7 @@ impl PlanningScreen {
             ui.label("-");
             time_field(ui, &mut draft.end_min, "End");
             ui.add(
-                TextEdit::singleline(&mut draft.label)
+                field(&mut draft.label)
                     .hint_text("Label (optional)")
                     .desired_width(size::FIELD),
             )

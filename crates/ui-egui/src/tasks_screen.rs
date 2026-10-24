@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Color32, ComboBox, CornerRadius, DragValue, Layout, Rect, RichText, Role, Sense, Shape,
-    Stroke, TextEdit, TextFormat, Ui, UiBuilder, WidgetInfo, vec2,
+    Align, Color32, CornerRadius, Layout, Rect, RichText, Role, Sense, Shape, Stroke, TextFormat,
+    Ui, UiBuilder, WidgetInfo, vec2,
 };
 use jiff::SignedDuration;
 use wt_core::repo::RepoResult;
@@ -15,9 +15,9 @@ use wt_core::{
 
 use crate::theme::{FADE, bold, font, palette, radius, size, space, stroke, text};
 use crate::widgets::{
-    CheckShape, DeleteClick, Icon, color32, delete_buttons, empty_state, icon_button, message,
-    pill, placeholder_check, progress_pie, raised_card, screen_header, tag, tag_style, task_check,
-    text_button, timer_capsule,
+    CheckShape, DeleteClick, Icon, color32, delete_buttons, empty_state, field, icon_button,
+    message, pill, placeholder_check, progress_pie, raised_card, screen_header, tag, tag_picker,
+    task_check, text_button, timer_capsule,
 };
 
 /// How far checklist items sit in from their to-do: one checkbox column, so
@@ -30,6 +30,9 @@ const GROUP_GAP: f32 = space::XL;
 const ACTION_SLOTS: f32 = 4.0;
 /// Room the new-task field leaves for the category tag and "Add task".
 const NEW_TASK_TRAILING: f32 = size::PICKER + size::TIME_COLUMN;
+/// The break intervals a task can pick, in minutes. A task's own value
+/// that isn't one of these is offered too, so editing never loses it.
+const BREAK_PRESETS: [u32; 8] = [15, 20, 25, 30, 45, 50, 60, 90];
 
 /// Today: open tasks carried over plus anything finished today, drawn like
 /// the Things 3 Today list.
@@ -133,10 +136,18 @@ struct RowContext<'a> {
     cats: &'a [Category],
     /// Today's time per task, including everything below it.
     family_time: &'a HashMap<Id, SignedDuration>,
+    /// The break interval from Settings, used when a task has none of its own.
+    default_break: u32,
 }
 
 impl TasksScreen {
-    pub fn ui(&mut self, ui: &mut Ui, store: &dyn SessionRepo, clock: &dyn Clock) {
+    pub fn ui(
+        &mut self,
+        ui: &mut Ui,
+        store: &dyn SessionRepo,
+        settings: &Settings,
+        clock: &dyn Clock,
+    ) {
         let tasks: &dyn TaskRepo = store;
         let categories: &dyn CategoryRepo = store;
         let now = clock.now();
@@ -192,6 +203,7 @@ impl TasksScreen {
             by_id: &by_id,
             cats: &cats,
             family_time: &family_time,
+            default_break: settings.break_interval_min,
         };
         self.pointer_on = None;
         egui::ScrollArea::vertical()
@@ -236,7 +248,7 @@ impl TasksScreen {
             time: context.family_time.get(&id).copied().unwrap_or_default(),
             depth,
         };
-        self.task_row(ui, &row, context.cats, action);
+        self.task_row(ui, &row, context, action);
         let adding_here = self.adding_under.as_ref().is_some_and(|a| a.0 == id);
         if tree.children.is_empty() && !adding_here {
             return;
@@ -265,11 +277,10 @@ impl TasksScreen {
             placeholder_check(ui, CheckShape::Square);
             let field = ui
                 .add(
-                    TextEdit::singleline(&mut self.new_title)
+                    field(&mut self.new_title)
                         .hint_text("New To-Do")
                         .frame(egui::Frame::new())
                         .margin(vec2(0.0, 0.0))
-                        .align(egui::Align2::LEFT_CENTER)
                         .min_size(vec2(0.0, size::TASK_ROW))
                         .font(font(text::TASK))
                         .desired_width(
@@ -292,12 +303,12 @@ impl TasksScreen {
         &mut self,
         ui: &mut Ui,
         row: &Row<'_>,
-        cats: &[Category],
+        context: &RowContext<'_>,
         action: &mut Option<Action>,
     ) {
         let id = row.task.meta.id;
         if let Some(draft) = self.renaming.as_mut().filter(|d| d.id == id) {
-            edit_card(ui, draft, row.kind.shape(), cats, action);
+            edit_card(ui, draft, row.kind.shape(), context, action);
             return;
         }
         let p = palette(ui);
@@ -417,7 +428,7 @@ impl TasksScreen {
             placeholder_check(ui, shape);
             let field = ui
                 .add(
-                    TextEdit::singleline(text)
+                    field(text)
                         .hint_text("New sub-task")
                         .frame(egui::Frame::new())
                         .margin(vec2(0.0, 0.0))
@@ -587,7 +598,7 @@ fn edit_card(
     ui: &mut Ui,
     draft: &mut EditDraft,
     shape: CheckShape,
-    cats: &[Category],
+    context: &RowContext<'_>,
     action: &mut Option<Action>,
 ) {
     let p = palette(ui);
@@ -597,10 +608,9 @@ fn edit_card(
         ui.allocate_ui_with_layout(line, Layout::left_to_right(Align::Center), |ui| {
             placeholder_check(ui, shape);
             ui.add(
-                TextEdit::singleline(&mut draft.title)
+                field(&mut draft.title)
                     .frame(egui::Frame::new())
                     .margin(vec2(0.0, 0.0))
-                    .align(egui::Align2::LEFT_CENTER)
                     .min_size(vec2(0.0, size::TASK_ROW))
                     .font(font(text_size(shape)))
                     .desired_width(f32::INFINITY),
@@ -611,15 +621,18 @@ fn edit_card(
         ui.horizontal(|ui| {
             ui.add_space(INDENT);
             if draft.top_level {
-                category_picker(ui, ("rename_category", draft.id), cats, &mut draft.category);
-                let mut own = draft.break_interval.is_some();
-                if ui.checkbox(&mut own, "Own break every").changed() {
-                    draft.break_interval = own.then_some(Settings::default().break_interval_min);
-                }
-                if let Some(minutes) = draft.break_interval.as_mut() {
-                    ui.add(DragValue::new(minutes).range(1..=180).suffix(" min"))
-                        .accessible_name("Break every (min)");
-                }
+                category_picker(
+                    ui,
+                    ("rename_category", draft.id),
+                    context.cats,
+                    &mut draft.category,
+                );
+                break_picker(
+                    ui,
+                    ("rename_break", draft.id),
+                    context.default_break,
+                    &mut draft.break_interval,
+                );
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 if pill(ui, "Save", p.accent, Color32::WHITE).clicked() {
@@ -671,18 +684,38 @@ fn category_picker(
 ) {
     let current = cats.iter().find(|c| Some(c.meta.id) == *selected);
     let name = current.map_or("-", |c| c.name.as_str());
-    ui.scope(|ui| {
-        tag_style(ui);
-        ComboBox::from_id_salt(id_salt)
-            .selected_text(name)
-            .width(0.0)
-            .show_ui(ui, |ui| {
-                for c in cats {
-                    ui.selectable_value(selected, Some(c.meta.id), &c.name);
-                }
-            })
-            .response
-            .accessible_name("Category");
+    tag_picker(ui, id_salt, name, "Category", |ui| {
+        for c in cats {
+            ui.selectable_value(selected, Some(c.meta.id), &c.name);
+        }
+    });
+}
+
+/// A task's own break interval as a tag drop-down beside its category:
+/// the Settings default (no value of its own) or one of [`BREAK_PRESETS`],
+/// plus the task's current value when it is none of those.
+fn break_picker(
+    ui: &mut Ui,
+    id_salt: impl egui::AsIdSalt,
+    default: u32,
+    selected: &mut Option<u32>,
+) {
+    let shown = match *selected {
+        Some(minutes) => format!("Break {minutes}m"),
+        None => "Default break".to_owned(),
+    };
+    let mut choices: Vec<u32> = BREAK_PRESETS.to_vec();
+    if let Some(own) = *selected
+        && !choices.contains(&own)
+    {
+        choices.push(own);
+        choices.sort_unstable();
+    }
+    tag_picker(ui, id_salt, &shown, "Break interval", |ui| {
+        ui.selectable_value(selected, None, format!("Default break ({default}m)"));
+        for minutes in choices {
+            ui.selectable_value(selected, Some(minutes), format!("Break every {minutes}m"));
+        }
     });
 }
 
