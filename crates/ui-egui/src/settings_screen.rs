@@ -37,76 +37,80 @@ impl SettingsScreen {
         crate::widgets::screen_title(ui, crate::widgets::Icon::Gear, p.secondary, "Settings");
 
         let d = &mut self.draft;
-        Grid::new("settings")
-            .num_columns(2)
-            .spacing([24.0, 10.0])
-            .show(ui, |ui| {
-                number_row(
-                    ui,
-                    "Office target (min)",
-                    &mut d.office_target_min,
-                    60..=16 * 60,
-                );
-                number_row(
-                    ui,
-                    "Soft ceiling (min)",
-                    &mut d.office_ceiling_min,
-                    60..=18 * 60,
-                );
-                number_row(ui, "Break every (min)", &mut d.break_interval_min, 1..=180);
-                number_row(ui, "Break length (min)", &mut d.break_length_min, 1..=60);
-                number_row(
-                    ui,
-                    "Nudge after (sec)",
-                    &mut d.distraction_grace_secs,
-                    5..=600,
-                );
-                number_row(
-                    ui,
-                    "Nudge cooldown (sec)",
-                    &mut d.nudge_cooldown_secs,
-                    10..=3600,
-                );
+        crate::widgets::section_label(ui, "Day and breaks");
+        crate::widgets::card(ui, |ui| {
+            Grid::new("settings")
+                .num_columns(2)
+                .min_col_width(crate::theme::size::LABEL_COLUMN)
+                .spacing([crate::theme::space::XL, crate::theme::space::MD])
+                .show(ui, |ui| {
+                    number_row(
+                        ui,
+                        "Office target (min)",
+                        &mut d.office_target_min,
+                        60..=16 * 60,
+                    );
+                    number_row(
+                        ui,
+                        "Soft ceiling (min)",
+                        &mut d.office_ceiling_min,
+                        60..=18 * 60,
+                    );
+                    number_row(ui, "Break every (min)", &mut d.break_interval_min, 1..=180);
+                    number_row(ui, "Break length (min)", &mut d.break_length_min, 1..=60);
+                    number_row(
+                        ui,
+                        "Nudge after (sec)",
+                        &mut d.distraction_grace_secs,
+                        5..=600,
+                    );
+                    number_row(
+                        ui,
+                        "Nudge cooldown (sec)",
+                        &mut d.nudge_cooldown_secs,
+                        10..=3600,
+                    );
 
-                let label = ui.label("Week starts on");
-                ComboBox::from_id_salt("week_start")
-                    .selected_text(day_name(d.week_start))
-                    .show_ui(ui, |ui| {
+                    let label = ui.label("Week starts on");
+                    ComboBox::from_id_salt("week_start")
+                        .selected_text(day_name(d.week_start))
+                        .show_ui(ui, |ui| {
+                            for (day, name) in DAYS {
+                                ui.selectable_value(&mut d.week_start, day, name);
+                            }
+                        })
+                        .response
+                        .labelled_by(label.id);
+                    ui.end_row();
+
+                    ui.label("Workdays");
+                    ui.horizontal(|ui| {
                         for (day, name) in DAYS {
-                            ui.selectable_value(&mut d.week_start, day, name);
+                            let mut on = d.workdays.contains(&day);
+                            if ui.checkbox(&mut on, name).changed() {
+                                d.workdays = DAYS
+                                    .iter()
+                                    .map(|(day, _)| *day)
+                                    .filter(|x| {
+                                        if *x == day {
+                                            on
+                                        } else {
+                                            d.workdays.contains(x)
+                                        }
+                                    })
+                                    .collect();
+                            }
                         }
-                    })
-                    .response
-                    .labelled_by(label.id);
-                ui.end_row();
+                    });
+                    ui.end_row();
 
-                ui.label("Workdays");
-                ui.horizontal(|ui| {
-                    for (day, name) in DAYS {
-                        let mut on = d.workdays.contains(&day);
-                        if ui.checkbox(&mut on, name).changed() {
-                            d.workdays = DAYS
-                                .iter()
-                                .map(|(day, _)| *day)
-                                .filter(|x| {
-                                    if *x == day {
-                                        on
-                                    } else {
-                                        d.workdays.contains(x)
-                                    }
-                                })
-                                .collect();
-                        }
-                    }
+                    ui.label("");
+                    ui.checkbox(&mut d.autostart, "Start at login");
+                    ui.end_row();
                 });
-                ui.end_row();
+        });
 
-                ui.label("");
-                ui.checkbox(&mut d.autostart, "Start at login");
-                ui.end_row();
-            });
-
-        ui.add_space(12.0);
+        ui.add_space(crate::theme::space::LG);
         if crate::widgets::pill(ui, "Save", p.accent, egui::Color32::WHITE).clicked() {
             self.status = Some(self.save(repo, autostart));
         }

@@ -1,10 +1,11 @@
 use egui::{ComboBox, TextEdit, Ui};
 use wt_core::repo::RepoResult;
-use wt_core::{CategoryKind, CategoryRepo, Id, NewCategory, Rgb};
+use wt_core::{Category, CategoryKind, CategoryRepo, Id, NewCategory, Rgb};
 
+use crate::theme::{size, space};
 use crate::widgets::{
-    DeleteClick, Icon, color_dot, delete_buttons, icon_button, message, pill, screen_title,
-    text_button,
+    DeleteClick, Icon, card, color_dot, column, delete_buttons, empty_state, icon_button, list_row,
+    message, pill, screen_title, text_button, truncated,
 };
 
 /// Add, edit and delete categories. Deleting one still used by tasks is refused.
@@ -73,45 +74,60 @@ impl CategoriesScreen {
             }
         });
         message(ui, &self.message);
-        ui.separator();
+        ui.add_space(space::MD);
 
-        for cat in &cats {
-            let id = cat.meta.id;
-            ui.horizontal(|ui| {
-                color_dot(ui, cat.color);
-                if let Some((_, name, color)) = self.editing.as_mut().filter(|e| e.0 == id) {
-                    ui.add(TextEdit::singleline(name).desired_width(180.0))
-                        .accessible_name("Edit category name");
-                    ui.color_edit_button_srgb(color)
-                        .accessible_name("Edit colour");
-                    if text_button(ui, "Save", true).clicked() {
-                        action = Some(Action::Save);
-                    }
-                    if text_button(ui, "Cancel", false).clicked() {
-                        action = Some(Action::Close);
-                    }
-                    return;
-                }
-                ui.label(&cat.name);
-                ui.weak(kind_label(cat.kind));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    match delete_buttons(ui, self.confirm_delete == Some(id)) {
-                        Some(DeleteClick::Arm) => action = Some(Action::ArmDelete(Some(id))),
-                        Some(DeleteClick::Confirm) => action = Some(Action::Delete(id)),
-                        Some(DeleteClick::Cancel) => action = Some(Action::ArmDelete(None)),
-                        None => {}
-                    }
-                    if icon_button(ui, Icon::Pencil, "Edit", p.secondary).clicked() {
-                        let Rgb(r, g, b) = cat.color;
-                        action = Some(Action::OpenEdit(id, cat.name.clone(), [r, g, b]));
-                    }
-                });
-            });
-        }
+        card(ui, |ui| {
+            if cats.is_empty() {
+                empty_state(
+                    ui,
+                    Icon::Tag,
+                    "No categories yet.",
+                    Some("Add one above to sort your tasks and timers."),
+                );
+            }
+            for cat in &cats {
+                self.category_row(ui, cat, &mut action);
+            }
+        });
 
         if let Some(action) = action {
             self.apply(action, categories);
         }
+    }
+
+    fn category_row(&mut self, ui: &mut Ui, cat: &Category, action: &mut Option<Action>) {
+        let p = crate::theme::palette(ui);
+        let id = cat.meta.id;
+        list_row(ui, id, |ui| {
+            color_dot(ui, cat.color);
+            if let Some((_, name, color)) = self.editing.as_mut().filter(|e| e.0 == id) {
+                ui.add(TextEdit::singleline(name).desired_width(size::LABEL_COLUMN))
+                    .accessible_name("Edit category name");
+                ui.color_edit_button_srgb(color)
+                    .accessible_name("Edit colour");
+                if text_button(ui, "Save", true).clicked() {
+                    *action = Some(Action::Save);
+                }
+                if text_button(ui, "Cancel", false).clicked() {
+                    *action = Some(Action::Close);
+                }
+                return;
+            }
+            column(ui, size::LABEL_COLUMN, |ui| truncated(ui, &cat.name));
+            ui.weak(kind_label(cat.kind));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                match delete_buttons(ui, self.confirm_delete == Some(id)) {
+                    Some(DeleteClick::Arm) => *action = Some(Action::ArmDelete(Some(id))),
+                    Some(DeleteClick::Confirm) => *action = Some(Action::Delete(id)),
+                    Some(DeleteClick::Cancel) => *action = Some(Action::ArmDelete(None)),
+                    None => {}
+                }
+                if icon_button(ui, Icon::Pencil, "Edit", p.secondary).clicked() {
+                    let Rgb(r, g, b) = cat.color;
+                    *action = Some(Action::OpenEdit(id, cat.name.clone(), [r, g, b]));
+                }
+            });
+        });
     }
 
     fn apply(&mut self, action: Action, categories: &dyn CategoryRepo) {

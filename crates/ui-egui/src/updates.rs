@@ -102,8 +102,7 @@ impl UpdateController {
     /// The Settings section: version, a manual check, and the current state.
     pub fn settings_ui(&mut self, ui: &mut Ui) {
         let p = palette(ui);
-        ui.add_space(20.0);
-        ui.label(RichText::new("Updates").strong());
+        crate::widgets::section_label(ui, "Updates");
         let Some(updater) = self.updater.clone() else {
             ui.label(RichText::new("Updates are off in development builds.").color(p.secondary));
             return;

@@ -26,6 +26,7 @@ use wt_core::{
     Notifier, SessionRepo, SettingsRepo, TaskRepo,
 };
 
+use crate::theme::{size, space};
 use crate::widgets::Icon;
 
 pub use cache::CachedStore;
@@ -303,12 +304,12 @@ impl<S: Store> eframe::App for WfhApp<S> {
         let p = theme::palette(ui);
         egui::Panel::left("nav")
             .resizable(false)
-            .exact_size(210.0)
+            .exact_size(size::SIDEBAR_WIDTH)
             .show_separator_line(false)
             .frame(
                 egui::Frame::new()
                     .fill(p.sidebar)
-                    .inner_margin(egui::Margin::symmetric(10, 16)),
+                    .inner_margin(egui::Margin::symmetric(space::MD as i8, space::LG as i8)),
             )
             .show(ui, |ui| self.sidebar(ui));
         egui::Panel::top("status")
@@ -316,7 +317,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
             .frame(
                 egui::Frame::new()
                     .fill(p.canvas)
-                    .inner_margin(egui::Margin::symmetric(24, 10)),
+                    .inner_margin(egui::Margin::symmetric(space::XL as i8, space::SM as i8)),
             )
             .show(ui, |ui| {
                 self.status
@@ -327,7 +328,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
             .frame(
                 egui::Frame::new()
                     .fill(p.canvas)
-                    .inner_margin(egui::Margin::symmetric(32, 20)),
+                    .inner_margin(egui::Margin::symmetric(space::XXL as i8, space::XL as i8)),
             )
             .show(ui, |ui| match self.screen {
                 Screen::Tasks => self.tasks.ui(ui, &self.store, self.clock.as_ref()),

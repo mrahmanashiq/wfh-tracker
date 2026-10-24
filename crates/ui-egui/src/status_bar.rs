@@ -8,8 +8,13 @@ use wt_core::{
     target_text, tracked_time,
 };
 
-use crate::theme::palette;
-use crate::widgets::{Icon, color32, icon_button, message, pill, section_label, sidebar_row};
+use crate::theme::{palette, radius, size, space};
+use crate::widgets::{
+    Icon, color32, icon_button, message, pill, progress_bar, section_label, sidebar_row,
+};
+
+/// The office-time bar in the header.
+const OFFICE_BAR_WIDTH: f32 = 150.0;
 
 /// A timer left running is stopped once the app has been gone this long.
 const RECOVERY_GAP: SignedDuration = SignedDuration::from_mins(3);
@@ -63,14 +68,14 @@ impl StatusBar {
         let p = palette(ui);
         let mut action = None;
         ui.horizontal(|ui| {
-            ui.set_min_height(36.0);
+            ui.set_min_height(size::ROW);
             match &running {
                 Some(session) => {
                     let color = timer_color(store, session, p.accent);
                     egui::Frame::new()
                         .fill(p.accent_soft)
-                        .corner_radius(CornerRadius::same(16))
-                        .inner_margin(egui::Margin::symmetric(12, 4))
+                        .corner_radius(CornerRadius::same(radius::PILL + 2))
+                        .inner_margin(egui::Margin::symmetric(space::MD as i8, 3))
                         .show(ui, |ui| {
                             let (dot, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
                             ui.painter().circle_filled(dot.center(), 4.0, color);
@@ -100,7 +105,7 @@ impl StatusBar {
                 }
             }
 
-            ui.add_space(12.0);
+            ui.add_space(space::MD);
             if let Some(block) = active_block(blocks, now, &clock.time_zone()) {
                 ui.label(
                     RichText::new(format!(
@@ -111,14 +116,14 @@ impl StatusBar {
                     .small()
                     .color(p.accent),
                 );
-                ui.add_space(8.0);
+                ui.add_space(space::SM);
             }
             let today = clock.today();
             let office = office_time(&sessions, today, &clock.time_zone(), now);
             let status = office_status(office, settings, today.weekday());
             // Fixed width, so the pills on the right never cover it.
-            ui.allocate_ui(vec2(200.0, 36.0), |ui| {
-                ui.add_space(2.0);
+            ui.allocate_ui(vec2(OFFICE_BAR_WIDTH + space::XL * 2.0, size::ROW), |ui| {
+                ui.spacing_mut().item_spacing.y = space::XS;
                 ui.label(
                     RichText::new(office_text(office, settings, today.weekday()))
                         .small()
@@ -407,14 +412,8 @@ fn notice_text(
 
 /// A thin bar: office time against the daily target (full when reached).
 fn office_bar(ui: &mut Ui, office: SignedDuration, target_min: u32, color: Color32) {
-    let p = palette(ui);
-    let (rect, _) = ui.allocate_exact_size(vec2(150.0, 4.0), Sense::hover());
-    let rounding = CornerRadius::same(2);
-    ui.painter().rect_filled(rect, rounding, p.hover);
-    let share = (office.as_mins() as f32 / target_min.max(1) as f32).clamp(0.0, 1.0);
-    let mut done = rect;
-    done.set_width(rect.width() * share);
-    ui.painter().rect_filled(done, rounding, color);
+    let share = office.as_mins() as f32 / target_min.max(1) as f32;
+    progress_bar(ui, OFFICE_BAR_WIDTH, share, color);
 }
 
 /// The running session's category colour, falling back to `default`.

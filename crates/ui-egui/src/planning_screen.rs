@@ -6,10 +6,11 @@ use wt_core::{
 };
 
 use crate::PlanStore;
-use crate::theme::palette;
+use crate::theme::{palette, size, space};
 use crate::widgets::{
-    DeleteClick, Icon, color_dot, color32, day_name, delete_buttons, icon_button, message, pill,
-    progress_bar, screen_title, section_label, target_progress_text,
+    DeleteClick, Icon, card, color_dot, color32, column, day_name, delete_buttons, empty_state,
+    icon_button, list_row, message, pill, progress_bar, screen_title, section_label,
+    target_progress_text, truncated,
 };
 
 /// Targets ("Learning: 5h this week") and scheduled blocks.
@@ -78,51 +79,65 @@ impl PlanningScreen {
                     .unwrap_or(now),
             )
             .unwrap_or_default();
-        for target in &targets {
-            let done = target_progress(
-                &sessions,
-                target,
-                today,
-                &clock.time_zone(),
-                now,
-                settings.week_start,
-            );
-            ui.horizontal(|ui| {
-                if let Some(cat) = cats.iter().find(|c| c.meta.id == target.category_id) {
-                    color_dot(ui, cat.color);
-                }
-                let period = match target.period {
-                    Period::Week => "this week",
-                    Period::Month => "this month",
-                };
-                ui.label(format!("{} · {period}", name_of(target.category_id)));
-                let goal = jiff::SignedDuration::from_mins(i64::from(target.minutes));
-                let met = done >= goal;
-                progress_bar(
+        card(ui, |ui| {
+            if targets.is_empty() {
+                empty_state(
                     ui,
-                    120.0,
-                    done.as_mins() as f32 / goal.as_mins().max(1) as f32,
-                    if met { p.success } else { p.accent },
+                    Icon::Target,
+                    "No targets yet.",
+                    Some("Set one below, such as Learning 5h per week."),
                 );
-                ui.label(
-                    RichText::new(target_progress_text(done, target.minutes)).color(if met {
-                        p.success
-                    } else {
-                        p.secondary
-                    }),
+            }
+            for target in &targets {
+                let done = target_progress(
+                    &sessions,
+                    target,
+                    today,
+                    &clock.time_zone(),
+                    now,
+                    settings.week_start,
                 );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let id = target.meta.id;
-                    self.row_actions(
+                list_row(ui, target.meta.id, |ui| {
+                    if let Some(cat) = cats.iter().find(|c| c.meta.id == target.category_id) {
+                        color_dot(ui, cat.color);
+                    }
+                    let period = match target.period {
+                        Period::Week => "this week",
+                        Period::Month => "this month",
+                    };
+                    column(ui, size::LABEL_COLUMN, |ui| {
+                        truncated(ui, format!("{} · {period}", name_of(target.category_id)));
+                    });
+                    let goal = jiff::SignedDuration::from_mins(i64::from(target.minutes));
+                    let met = done >= goal;
+                    progress_bar(
                         ui,
-                        id,
-                        &mut action,
-                        || Action::EditTarget(target.clone()),
-                        Action::DeleteTarget(id),
+                        size::BAR_COLUMN,
+                        done.as_mins() as f32 / goal.as_mins().max(1) as f32,
+                        if met { p.success } else { p.accent },
                     );
+                    ui.add_space(space::XS);
+                    ui.label(
+                        RichText::new(target_progress_text(done, target.minutes)).color(if met {
+                            p.success
+                        } else {
+                            p.secondary
+                        }),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let id = target.meta.id;
+                        self.row_actions(
+                            ui,
+                            id,
+                            &mut action,
+                            || Action::EditTarget(target.clone()),
+                            Action::DeleteTarget(id),
+                        );
+                    });
                 });
-            });
-        }
+            }
+        });
+        ui.add_space(space::SM);
         ui.horizontal(|ui| {
             let category = self
                 .target_category
@@ -159,41 +174,52 @@ impl PlanningScreen {
 
         // Blocks
         section_label(ui, "Scheduled blocks");
-        for block in &blocks {
-            ui.horizontal(|ui| {
-                if let Some(cat) = cats.iter().find(|c| c.meta.id == block.category_id) {
-                    color_dot(ui, cat.color);
-                }
-                let title = if block.label.is_empty() {
-                    name_of(block.category_id)
-                } else {
-                    &block.label
-                };
-                ui.label(title);
-                let days: Vec<&str> = block.weekdays.days().map(day_name).collect();
-                ui.label(
-                    RichText::new(format!("{} · {}", days.join(" "), block.times_text()))
-                        .color(p.secondary),
+        card(ui, |ui| {
+            if blocks.is_empty() {
+                empty_state(
+                    ui,
+                    Icon::Target,
+                    "No scheduled blocks.",
+                    Some("Add one below to get a reminder when it starts."),
                 );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let draft = BlockDraft {
-                        category_id: block.category_id,
-                        weekdays: block.weekdays,
-                        start_min: block.start_min,
-                        end_min: block.end_min,
-                        label: block.label.clone(),
+            }
+            for block in &blocks {
+                list_row(ui, block.meta.id, |ui| {
+                    if let Some(cat) = cats.iter().find(|c| c.meta.id == block.category_id) {
+                        color_dot(ui, cat.color);
+                    }
+                    let title = if block.label.is_empty() {
+                        name_of(block.category_id)
+                    } else {
+                        &block.label
                     };
-                    let id = block.meta.id;
-                    self.row_actions(
-                        ui,
-                        id,
-                        &mut action,
-                        || Action::EditBlock(id, draft),
-                        Action::DeleteBlock(id),
+                    column(ui, size::LABEL_COLUMN, |ui| truncated(ui, title));
+                    let days: Vec<&str> = block.weekdays.days().map(day_name).collect();
+                    ui.label(
+                        RichText::new(format!("{} · {}", days.join(" "), block.times_text()))
+                            .color(p.secondary),
                     );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let draft = BlockDraft {
+                            category_id: block.category_id,
+                            weekdays: block.weekdays,
+                            start_min: block.start_min,
+                            end_min: block.end_min,
+                            label: block.label.clone(),
+                        };
+                        let id = block.meta.id;
+                        self.row_actions(
+                            ui,
+                            id,
+                            &mut action,
+                            || Action::EditBlock(id, draft),
+                            Action::DeleteBlock(id),
+                        );
+                    });
                 });
-            });
-        }
+            }
+        });
+        ui.add_space(space::SM);
         let draft = self.block.get_or_insert_with(|| BlockDraft {
             category_id: default_category.unwrap_or_default(),
             weekdays: Weekdays::from_days(&settings.workdays),
@@ -215,7 +241,7 @@ impl PlanningScreen {
             ui.add(
                 TextEdit::singleline(&mut draft.label)
                     .hint_text("Label (optional)")
-                    .desired_width(140.0),
+                    .desired_width(size::FIELD),
             )
             .accessible_name("Block label");
             let label = if self.editing.is_some() {
@@ -353,7 +379,7 @@ fn category_picker(ui: &mut Ui, id_salt: &str, cats: &[Category], selected: &mut
     );
     ComboBox::from_id_salt(id_salt)
         .selected_text(text)
-        .width(120.0)
+        .width(size::PICKER)
         .show_ui(ui, |ui| {
             for c in cats {
                 ui.selectable_value(selected, c.meta.id, &c.name);

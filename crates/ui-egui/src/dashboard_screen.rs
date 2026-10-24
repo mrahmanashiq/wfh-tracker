@@ -3,8 +3,8 @@
 //! with an accessible name.
 
 use egui::{
-    Align2, Color32, CornerRadius, FontId, Rect, RichText, Role, ScrollArea, Sense, Stroke, Ui,
-    WidgetInfo, pos2, vec2,
+    Align2, Color32, CornerRadius, Rect, RichText, Role, ScrollArea, Sense, Stroke, Ui, WidgetInfo,
+    pos2, vec2,
 };
 use jiff::civil::Date;
 use jiff::{SignedDuration, ToSpan};
@@ -17,17 +17,20 @@ use wt_core::{
 };
 
 use crate::DashboardStore;
-use crate::theme::{Palette, palette};
+use crate::theme::{Palette, bold, font, palette, radius, space, text};
 use crate::widgets::{
-    Icon, color_dot, color32, day_name, message, progress_bar, screen_title, section_label,
-    target_progress_text,
+    Icon, bar_row, card, color32, day_name, empty_state, fade, message, paint_card, screen_title,
+    section_label, target_progress_text,
 };
-const CARD_HEIGHT: f32 = 84.0;
-const GAP: f32 = 12.0;
+
+const CARD_HEIGHT: f32 = 88.0;
+const GAP: f32 = space::MD;
 const STRIP_HEIGHT: f32 = 26.0;
 const WEEK_CHART_HEIGHT: f32 = 120.0;
-const BAR_ROUNDING: CornerRadius = CornerRadius::same(3);
-const ROW_BAR_WIDTH: f32 = 220.0;
+const BAR_ROUNDING: CornerRadius = CornerRadius::same(radius::XS);
+/// One day's column in the week chart, and the bar inside it.
+const DAY_COLUMN: f32 = 56.0;
+const DAY_BAR_WIDTH: f32 = 22.0;
 
 /// Today's cards and timeline, then this week's office bars, category
 /// progress and distractions.
@@ -72,13 +75,16 @@ impl DashboardScreen {
             section_label(ui, "Today");
             cards(ui, &data, settings);
             ui.add_space(GAP);
-            timeline(ui, &data);
+            card(ui, |ui| timeline(ui, &data));
             section_label(ui, "This week");
-            week_bars(ui, &data);
-            ui.add_space(GAP);
-            category_rows(ui, &data);
+            card(ui, |ui| {
+                week_bars(ui, &data);
+                ui.add_space(GAP);
+                category_rows(ui, &data);
+            });
             section_label(ui, "Distractions this week");
-            distraction_rows(ui, &data.week_distractions, p);
+            card(ui, |ui| distraction_rows(ui, &data.week_distractions, p));
+            ui.add_space(GAP);
         });
     }
 }
@@ -154,7 +160,7 @@ fn cards(ui: &mut Ui, data: &Data, settings: &Settings) {
                 note,
             )
         };
-        let rect = card(ui, width, "Office", &value, note.as_ref());
+        let rect = card_tile(ui, width, "Office", &value, note.as_ref());
         // The bar fills to the target; on a day off it shows only overtime.
         let fill = if off_day {
             overtime.is_positive().then_some((1.0, p.danger))
@@ -166,24 +172,21 @@ fn cards(ui: &mut Ui, data: &Data, settings: &Settings) {
             Some((ratio(data.office_today, target), p.accent))
         };
         if let Some((share, color)) = fill {
-            let bar = bar_rect(rect);
-            ui.painter().rect_filled(bar, BAR_ROUNDING, p.hover);
-            let done = Rect::from_min_size(bar.min, vec2(bar.width() * share, bar.height()));
-            ui.painter().rect_filled(done, BAR_ROUNDING, color);
+            crate::widgets::paint_bar(ui.painter(), bar_rect(rect), share, color, p.hover);
         }
         for (title, time) in [
             ("Learning", data.learning_today),
             ("Personal", data.personal_today),
             ("Distractions", data.distractions_today),
         ] {
-            card(ui, width, title, &hours_text(time), None);
+            card_tile(ui, width, title, &hours_text(time), None);
         }
     });
 }
 
 /// A painted card: a small title, a large value and an optional note. Its
 /// accessible name is the painted text: `Office 9h 30m / 8h - 30m overtime`.
-fn card(ui: &mut Ui, width: f32, title: &str, value: &str, note: Option<&Note>) -> Rect {
+fn card_tile(ui: &mut Ui, width: f32, title: &str, value: &str, note: Option<&Note>) -> Rect {
     let p = palette(ui);
     let (rect, response) = ui.allocate_exact_size(vec2(width, CARD_HEIGHT), Sense::hover());
     let name = match note {
@@ -192,38 +195,40 @@ fn card(ui: &mut Ui, width: f32, title: &str, value: &str, note: Option<&Note>) 
     };
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &name));
     let painter = ui.painter();
-    painter.rect_filled(rect, CornerRadius::same(10), p.sidebar);
-    let left = rect.left() + 14.0;
+    paint_card(painter, rect, &p);
+    let left = rect.left() + space::LG;
+    let top = rect.top() + space::MD + 2.0;
     painter.text(
-        pos2(left, rect.top() + 12.0),
+        pos2(left, top),
         Align2::LEFT_TOP,
         title,
-        FontId::proportional(12.0),
+        font(text::SMALL),
         p.secondary,
     );
     painter.text(
-        pos2(left, rect.top() + 30.0),
+        pos2(left, top + space::LG + 2.0),
         Align2::LEFT_TOP,
         value,
-        FontId::proportional(20.0),
+        bold(ui, text::VALUE),
         p.text,
     );
     if let Some(note) = note {
         painter.text(
-            pos2(rect.right() - 14.0, rect.top() + 12.0),
+            pos2(rect.right() - space::LG, top),
             Align2::RIGHT_TOP,
             &note.text,
-            FontId::proportional(12.0),
+            font(text::SMALL),
             if note.danger { p.danger } else { p.secondary },
         );
     }
     rect
 }
 
+/// The office card's progress bar, along its bottom edge.
 fn bar_rect(card: Rect) -> Rect {
     Rect::from_min_max(
-        pos2(card.left() + 14.0, card.bottom() - 16.0),
-        pos2(card.right() - 14.0, card.bottom() - 10.0),
+        pos2(card.left() + space::LG, card.bottom() - space::LG - 2.0),
+        pos2(card.right() - space::LG, card.bottom() - space::MD + 2.0),
     )
 }
 
@@ -234,21 +239,21 @@ fn timeline(ui: &mut Ui, data: &Data) {
     let (from, to) = timeline_window(&data.timeline);
     let span = f32::from(to - from);
     let (rect, _) = ui.allocate_exact_size(
-        vec2(ui.available_width(), STRIP_HEIGHT + 18.0),
+        vec2(ui.available_width(), STRIP_HEIGHT + space::LG + 2.0),
         Sense::hover(),
     );
     let strip = Rect::from_min_size(rect.min, vec2(rect.width(), STRIP_HEIGHT));
     let x_at =
         |min: u16| strip.left() + strip.width() * f32::from(min.clamp(from, to) - from) / span;
     ui.painter()
-        .rect_filled(strip, CornerRadius::same(6), p.sidebar);
+        .rect_filled(strip, CornerRadius::same(radius::SM), p.hover);
 
     // Hour ticks under the strip, labelled every hour or every other hour.
     let step = if to - from > 12 * 60 { 120 } else { 60 };
     for hour in (from..=to).step_by(60) {
         let x = x_at(hour);
         ui.painter().line_segment(
-            [pos2(x, strip.bottom()), pos2(x, strip.bottom() + 4.0)],
+            [pos2(x, strip.bottom()), pos2(x, strip.bottom() + space::XS)],
             Stroke::new(1.0, p.line),
         );
         if (hour - from) % step == 0 {
@@ -258,10 +263,10 @@ fn timeline(ui: &mut Ui, data: &Data) {
                 _ => Align2::CENTER_TOP,
             };
             ui.painter().text(
-                pos2(x, strip.bottom() + 5.0),
+                pos2(x, strip.bottom() + space::XS + 1.0),
                 align,
                 clock_text(hour),
-                FontId::proportional(11.0),
+                font(text::CAPTION),
                 p.secondary,
             );
         }
@@ -286,12 +291,10 @@ fn timeline(ui: &mut Ui, data: &Data) {
         } else {
             category_color(data, segment.category_id, p)
         };
-        let color = if response.hovered() {
-            color.gamma_multiply(0.8)
-        } else {
-            color
-        };
-        ui.painter().rect_filled(mark, CornerRadius::same(4), color);
+        let t = fade(ui, response.id, response.hovered());
+        let color = color.gamma_multiply(1.0 - 0.2 * t);
+        ui.painter()
+            .rect_filled(mark, CornerRadius::same(radius::XS + 1), color);
     }
 
     if (from..=to).contains(&data.now_min) {
@@ -326,8 +329,6 @@ fn segment_name(data: &Data, segment: &TimelineSegment) -> String {
 
 fn week_bars(ui: &mut Ui, data: &Data) {
     let p = palette(ui);
-    let column = 56.0;
-    let bar_width = 22.0;
     let scale_max = data
         .week
         .iter()
@@ -337,7 +338,7 @@ fn week_bars(ui: &mut Ui, data: &Data) {
         .max(SignedDuration::from_hours(1));
     let height_of = |d: SignedDuration| WEEK_CHART_HEIGHT * ratio(d, scale_max);
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.spacing_mut().item_spacing.x = space::XS;
         for day in &data.week {
             let weekday = day_name(day.date.weekday());
             let office = hours_text(day.office);
@@ -346,29 +347,26 @@ fn week_bars(ui: &mut Ui, data: &Data) {
                 None => format!("{weekday} {office} - day off"),
             };
             let (rect, response) =
-                ui.allocate_exact_size(vec2(column, WEEK_CHART_HEIGHT + 48.0), Sense::hover());
+                ui.allocate_exact_size(vec2(DAY_COLUMN, WEEK_CHART_HEIGHT + 48.0), Sense::hover());
             response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &name));
             let response = response.on_hover_text(&name);
+            let hover = fade(ui, response.id, response.hovered());
             let painter = ui.painter();
             let base = rect.top() + WEEK_CHART_HEIGHT;
             let cx = rect.center().x;
-            let x = (cx - bar_width / 2.0)..=(cx + bar_width / 2.0);
+            let x = (cx - DAY_BAR_WIDTH / 2.0)..=(cx + DAY_BAR_WIDTH / 2.0);
             painter.line_segment(
                 [
-                    pos2(rect.left() + 4.0, base),
-                    pos2(rect.right() - 4.0, base),
+                    pos2(rect.left() + space::XS, base),
+                    pos2(rect.right() - space::XS, base),
                 ],
-                Stroke::new(1.0, p.line),
+                Stroke::new(1.0, p.hairline),
             );
             let total = height_of(day.office);
             let over = height_of(day.overtime).min(total);
             let regular = Rect::from_x_y_ranges(x.clone(), (base - total + over)..=base);
             if regular.height() > 0.0 {
-                let fill = if response.hovered() {
-                    p.accent.gamma_multiply(0.8)
-                } else {
-                    p.accent
-                };
+                let fill = p.accent.gamma_multiply(1.0 - 0.2 * hover);
                 painter.rect_filled(regular, bottom_open_rounding(over > 0.0), fill);
             }
             if over > 0.0 {
@@ -380,27 +378,27 @@ fn week_bars(ui: &mut Ui, data: &Data) {
             if let Some(target) = day.target {
                 let y = base - height_of(target);
                 painter.line_segment(
-                    [pos2(cx - 16.0, y), pos2(cx + 16.0, y)],
-                    Stroke::new(1.5, p.secondary),
+                    [pos2(cx - space::LG, y), pos2(cx + space::LG, y)],
+                    Stroke::new(1.5, p.line),
                 );
             }
-            let label_color = if day.date == data.today {
-                p.accent
-            } else {
-                p.secondary
-            };
+            let is_today = day.date == data.today;
             painter.text(
-                pos2(cx, base + 4.0),
+                pos2(cx, base + space::XS),
                 Align2::CENTER_TOP,
                 weekday,
-                FontId::proportional(12.0),
-                label_color,
+                if is_today {
+                    bold(ui, text::SMALL)
+                } else {
+                    font(text::SMALL)
+                },
+                if is_today { p.accent } else { p.secondary },
             );
             painter.text(
                 pos2(cx, base + 19.0),
                 Align2::CENTER_TOP,
                 &office,
-                FontId::proportional(11.0),
+                font(text::CAPTION),
                 p.secondary,
             );
             if day.target.is_none() {
@@ -408,7 +406,7 @@ fn week_bars(ui: &mut Ui, data: &Data) {
                     pos2(cx, base + 33.0),
                     Align2::CENTER_TOP,
                     "day off",
-                    FontId::proportional(11.0),
+                    font(text::CAPTION),
                     p.secondary,
                 );
             }
@@ -422,8 +420,8 @@ fn bottom_open_rounding(covered: bool) -> CornerRadius {
         CornerRadius::ZERO
     } else {
         CornerRadius {
-            nw: 3,
-            ne: 3,
+            nw: radius::XS,
+            ne: radius::XS,
             sw: 0,
             se: 0,
         }
@@ -444,37 +442,40 @@ fn category_rows(ui: &mut Ui, data: &Data) {
     } in &data.week_categories
     {
         let target = data.targets.iter().find(|t| t.category_id == id);
-        let name = category_name(data, id);
-        ui.horizontal(|ui| {
-            if let Some(c) = data.categories.iter().find(|c| c.meta.id == id) {
-                color_dot(ui, c.color);
+        let dot = data
+            .categories
+            .iter()
+            .find(|c| c.meta.id == id)
+            .map(|c| color32(c.color));
+        let (share, color, value) = match target {
+            Some(t) => {
+                let goal = SignedDuration::from_mins(i64::from(t.minutes));
+                let met = time >= goal;
+                (
+                    ratio(time, goal),
+                    if met {
+                        p.success
+                    } else {
+                        category_color(data, id, p)
+                    },
+                    target_progress_text(time, t.minutes),
+                )
             }
-            let (share, color, text) = match target {
-                Some(t) => {
-                    let goal = SignedDuration::from_mins(i64::from(t.minutes));
-                    let met = time >= goal;
-                    (
-                        ratio(time, goal),
-                        if met {
-                            p.success
-                        } else {
-                            category_color(data, id, p)
-                        },
-                        format!("{name} {}", target_progress_text(time, t.minutes)),
-                    )
-                }
-                None => (
-                    ratio(time, longest),
-                    category_color(data, id, p),
-                    format!("{name} {}", hours_text(time)),
-                ),
-            };
-            progress_bar(ui, ROW_BAR_WIDTH, share, color);
-            ui.label(text);
-        });
+            None => (
+                ratio(time, longest),
+                category_color(data, id, p),
+                hours_text(time),
+            ),
+        };
+        bar_row(ui, dot, category_name(data, id), share, color, &value);
     }
     if data.week_categories.is_empty() {
-        ui.label(RichText::new("Nothing tracked this week yet.").color(p.secondary));
+        empty_state(
+            ui,
+            Icon::Chart,
+            "Nothing tracked this week yet.",
+            Some("Start a timer and your week fills in here."),
+        );
     }
 }
 
@@ -487,10 +488,17 @@ fn distraction_rows(ui: &mut Ui, totals: &DistractionTotals, p: Palette) {
         .max()
         .unwrap_or(SignedDuration::ZERO);
     for rule in &totals.rules {
-        ui.horizontal(|ui| {
-            progress_bar(ui, ROW_BAR_WIDTH, ratio(rule.time, longest), p.secondary);
-            ui.label(format!("{} {}", rule.name, duration_text(rule.time)));
-        });
+        bar_row(
+            ui,
+            None,
+            &rule.name,
+            ratio(rule.time, longest),
+            p.secondary,
+            &duration_text(rule.time),
+        );
+    }
+    if totals.rules.is_empty() {
+        ui.label(RichText::new("No distractions this week.").color(p.secondary));
     }
 }
 

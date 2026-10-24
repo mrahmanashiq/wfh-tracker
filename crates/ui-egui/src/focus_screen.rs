@@ -2,9 +2,10 @@ use egui::{ComboBox, RichText, TextEdit, Ui};
 use wt_core::repo::RepoResult;
 use wt_core::{DistractionRuleRepo, Id, MatchOn, RuleDraft};
 
-use crate::theme::palette;
+use crate::theme::{palette, size, space};
 use crate::widgets::{
-    DeleteClick, Icon, delete_buttons, message, pill, screen_title, section_label,
+    DeleteClick, Icon, card, column, delete_buttons, empty_state, list_row, message, pill,
+    screen_title, section_label,
 };
 
 /// Distraction rules: what counts as Facebook or reels during protected time.
@@ -57,31 +58,43 @@ impl FocusScreen {
 
         let mut action = None;
         section_label(ui, "Distraction rules");
-        for rule in &rules {
-            ui.horizontal(|ui| {
-                let mut on = rule.enabled;
-                if ui.checkbox(&mut on, &rule.pattern).changed() {
-                    action = Some(Action::SetEnabled(rule.meta.id, on));
-                }
-                ui.label(RichText::new(where_text(rule.match_on)).color(p.secondary));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let id = rule.meta.id;
-                    match delete_buttons(ui, self.confirm_delete == Some(id)) {
-                        Some(DeleteClick::Arm) => action = Some(Action::ArmDelete(Some(id))),
-                        Some(DeleteClick::Confirm) => action = Some(Action::Delete(id)),
-                        Some(DeleteClick::Cancel) => action = Some(Action::ArmDelete(None)),
-                        None => {}
-                    }
+        card(ui, |ui| {
+            if rules.is_empty() {
+                empty_state(
+                    ui,
+                    Icon::Focus,
+                    "No distraction rules.",
+                    Some("Add a word to watch for, such as Twitter."),
+                );
+            }
+            for rule in &rules {
+                list_row(ui, rule.meta.id, |ui| {
+                    column(ui, size::LABEL_COLUMN, |ui| {
+                        let mut on = rule.enabled;
+                        if ui.checkbox(&mut on, &rule.pattern).changed() {
+                            action = Some(Action::SetEnabled(rule.meta.id, on));
+                        }
+                    });
+                    ui.label(RichText::new(where_text(rule.match_on)).color(p.secondary));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let id = rule.meta.id;
+                        match delete_buttons(ui, self.confirm_delete == Some(id)) {
+                            Some(DeleteClick::Arm) => action = Some(Action::ArmDelete(Some(id))),
+                            Some(DeleteClick::Confirm) => action = Some(Action::Delete(id)),
+                            Some(DeleteClick::Cancel) => action = Some(Action::ArmDelete(None)),
+                            None => {}
+                        }
+                    });
                 });
-            });
-        }
+            }
+        });
 
-        ui.add_space(8.0);
+        ui.add_space(space::MD);
         ui.horizontal(|ui| {
             ui.add(
                 TextEdit::singleline(&mut self.draft.pattern)
                     .hint_text("e.g. Twitter")
-                    .desired_width(180.0),
+                    .desired_width(size::FIELD),
             )
             .accessible_name("Rule text");
             let match_on = &mut self.draft.match_on;

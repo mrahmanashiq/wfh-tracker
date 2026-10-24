@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use egui::{
-    Align, Button, ComboBox, CornerRadius, DragValue, FontId, Layout, RichText, Sense, Shape,
-    Stroke, TextEdit, Ui, vec2,
+    Align, Button, ComboBox, CornerRadius, DragValue, Layout, RichText, Sense, Shape, Stroke,
+    TextEdit, Ui, vec2,
 };
 use jiff::SignedDuration;
 use wt_core::repo::RepoResult;
@@ -12,10 +12,16 @@ use wt_core::{
     TimerTarget, duration_text, today_view, tracked_time,
 };
 
-use crate::theme::palette;
+use crate::theme::{FADE, font, palette, radius, size, space, text};
 use crate::widgets::{
-    DeleteClick, Icon, color32, delete_buttons, icon_button, message, progress_pie, round_check,
+    DeleteClick, Icon, color32, delete_buttons, empty_state, icon_button, message, progress_pie,
+    round_check, screen_header,
 };
+
+/// How far each level of sub-tasks is indented.
+const INDENT: f32 = space::XL + space::XS;
+/// Room the new-task field leaves for the category picker and "Add task".
+const NEW_TASK_TRAILING: f32 = size::PICKER + 100.0;
 
 /// Today: open tasks carried over plus anything finished today.
 #[derive(Default)]
@@ -106,25 +112,23 @@ impl TasksScreen {
 
         let p = palette(ui);
         let today = clock.today();
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(vec2(30.0, 30.0), Sense::hover());
-            Icon::Star.paint(ui.painter(), rect.expand(3.0), p.star);
-            ui.heading("Today");
-        });
-        ui.label(RichText::new(today.strftime("%A, %-d %B").to_string()).color(p.secondary));
-        ui.add_space(16.0);
+        let date = today.strftime("%A, %-d %B").to_string();
+        screen_header(ui, Icon::Star, p.star, "Today", Some(&date));
 
         let mut action = None;
         self.new_task_line(ui, &cats, &mut action);
         message(ui, &self.message);
-        ui.add_space(8.0);
+        ui.add_space(space::SM);
 
         let view = today_view(&all, today, &clock.time_zone());
         if view.is_empty() {
-            ui.add_space(40.0);
-            ui.vertical_centered(|ui| {
-                ui.label(RichText::new("Nothing on your list today.").color(p.secondary));
-            });
+            ui.add_space(space::XL);
+            empty_state(
+                ui,
+                Icon::Star,
+                "Nothing on your list today.",
+                Some("Type a to-do above and press Enter."),
+            );
         }
         let tz = clock.time_zone();
         let own_time = |id: Id| tracked_time(&sessions, TimerTarget::Task(id), today, &tz, now);
@@ -143,7 +147,7 @@ impl TasksScreen {
             .show(ui, |ui| {
                 for tree in &view {
                     self.tree_rows(ui, tree, 0, &context, &mut hovered, &mut action);
-                    ui.add_space(6.0);
+                    ui.add_space(space::XS);
                 }
             });
         self.hovered = hovered;
@@ -180,7 +184,7 @@ impl TasksScreen {
             return;
         }
         ui.horizontal(|ui| {
-            ui.add_space(28.0);
+            ui.add_space(INDENT);
             ui.vertical(|ui| {
                 for child in &tree.children {
                     self.tree_rows(ui, child, depth + 1, context, hovered, action);
@@ -193,8 +197,9 @@ impl TasksScreen {
     /// Things' "New To-Do" line: a ring, a borderless field and a category picker.
     fn new_task_line(&mut self, ui: &mut Ui, cats: &[Category], action: &mut Option<Action>) {
         let p = palette(ui);
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::hover());
+        let row = vec2(ui.available_width(), size::ROW);
+        ui.allocate_ui_with_layout(row, Layout::left_to_right(Align::Center), |ui| {
+            let (rect, _) = ui.allocate_exact_size(vec2(size::CHECK, size::CHECK), Sense::hover());
             ui.painter()
                 .circle_stroke(rect.center(), 8.0, Stroke::new(1.5, p.line));
             let field = ui
@@ -202,9 +207,13 @@ impl TasksScreen {
                     TextEdit::singleline(&mut self.new_title)
                         .hint_text("New To-Do")
                         .frame(egui::Frame::new())
-                        .margin(vec2(0.0, 3.0))
-                        .font(FontId::proportional(15.0))
-                        .desired_width((ui.available_width() - 230.0).max(120.0)),
+                        .margin(vec2(0.0, 0.0))
+                        .align(egui::Align2::LEFT_CENTER)
+                        .min_size(vec2(0.0, size::CONTROL))
+                        .font(font(text::TASK))
+                        .desired_width(
+                            (ui.available_width() - NEW_TASK_TRAILING).max(size::PICKER),
+                        ),
                 )
                 .accessible_name("New task title");
             let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
@@ -217,10 +226,10 @@ impl TasksScreen {
                 *action = Some(Action::Add);
             }
         });
-        ui.add_space(4.0);
+        ui.add_space(space::XS);
         let y = ui.cursor().top();
         ui.painter()
-            .hline(ui.max_rect().x_range(), y, Stroke::new(1.0, p.hover));
+            .hline(ui.max_rect().x_range(), y, Stroke::new(1.0, p.hairline));
     }
 
     fn task_row(
@@ -238,7 +247,7 @@ impl TasksScreen {
 
         let background = ui.painter().add(Shape::Noop);
         let inner = ui.allocate_ui_with_layout(
-            vec2(ui.available_width(), 32.0),
+            vec2(ui.available_width(), size::ROW),
             Layout::left_to_right(Align::Center),
             |ui| {
                 if let Some(draft) = self.renaming.as_mut().filter(|d| d.id == id) {
@@ -291,17 +300,24 @@ impl TasksScreen {
             },
         );
         let rect = inner.response.rect;
+        let hover = ui.ctx().animate_bool_with_time(
+            ui.scope_id().with(("task-hover", id)),
+            self.hovered == Some(id),
+            FADE,
+        );
         let fill = if running {
             Some(p.accent_soft)
-        } else if self.hovered == Some(id) {
-            Some(p.hover)
         } else {
-            None
+            (hover > 0.0).then(|| p.hover.gamma_multiply(hover))
         };
         if let Some(fill) = fill {
             ui.painter().set(
                 background,
-                Shape::rect_filled(rect.expand2(vec2(6.0, 0.0)), CornerRadius::same(8), fill),
+                Shape::rect_filled(
+                    rect.expand2(vec2(space::SM, 0.0)),
+                    CornerRadius::same(radius::MD),
+                    fill,
+                ),
             );
         }
         if ui.rect_contains_pointer(rect) {
@@ -414,7 +430,7 @@ impl TasksScreen {
 fn title(ui: &mut Ui, text: &str, done: bool, running: bool) {
     let p = palette(ui);
     let color = if done { p.secondary } else { p.text };
-    let font = FontId::proportional(15.0);
+    let font = font(text::TASK);
     let galley = ui.painter().layout_no_wrap(text.to_owned(), font, color);
     let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
     let painter = ui.painter();
@@ -434,7 +450,7 @@ fn title(ui: &mut Ui, text: &str, done: bool, running: bool) {
 
 fn edit_fields(ui: &mut Ui, draft: &mut EditDraft, cats: &[Category], action: &mut Option<Action>) {
     let p = palette(ui);
-    ui.add(TextEdit::singleline(&mut draft.title).desired_width(200.0))
+    ui.add(TextEdit::singleline(&mut draft.title).desired_width(size::FIELD))
         .accessible_name("Task title");
     if draft.top_level {
         category_picker(ui, ("rename_category", draft.id), cats, &mut draft.category);
@@ -499,7 +515,7 @@ fn category_picker(
     );
     ComboBox::from_id_salt(id_salt)
         .selected_text(text)
-        .width(130.0)
+        .width(size::PICKER)
         .show_ui(ui, |ui| {
             for c in cats {
                 ui.selectable_value(selected, Some(c.meta.id), &c.name);

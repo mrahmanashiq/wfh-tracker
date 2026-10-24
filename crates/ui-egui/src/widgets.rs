@@ -1,17 +1,19 @@
 //! Small painted widgets shared by the screens. Everything that has no visible
 //! text gets an accessible name, so screen readers (and the UI tests) find it.
+//! Sizes, gaps and colours come from [`crate::theme`].
 
 use std::f32::consts::TAU;
 
 use egui::{
-    Button, Color32, CornerRadius, Painter, Pos2, Rect, Response, RichText, Role, Sense, Shape,
-    Stroke, Ui, WidgetInfo, pos2, vec2,
+    Align, Align2, Button, Color32, CornerRadius, Frame, Id, InnerResponse, Label, Layout, Margin,
+    Painter, Pos2, Rect, Response, RichText, Role, Sense, Shape, Stroke, StrokeKind, Ui, UiBuilder,
+    WidgetInfo, pos2, vec2,
 };
 use jiff::SignedDuration;
 use jiff::civil::Weekday;
 use wt_core::{Rgb, hours_text};
 
-use crate::theme::palette;
+use crate::theme::{FADE, Palette, bold, card_shadow, font, palette, radius, size, space, text};
 
 const DAY_NAMES: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -29,22 +31,42 @@ pub fn color32(c: Rgb) -> Color32 {
     Color32::from_rgb(c.0, c.1, c.2)
 }
 
+/// 0 to 1: how far a hover or selection fade for `id` has got towards `on`.
+pub fn fade(ui: &Ui, id: Id, on: bool) -> f32 {
+    ui.ctx().animate_bool_with_time(id, on, FADE)
+}
+
+/// Paints `color` at `t` (0..=1) of its strength; nothing at 0.
+fn faded_fill(painter: &Painter, rect: Rect, rounding: u8, color: Color32, t: f32) {
+    if t > 0.0 {
+        painter.rect_filled(rect, CornerRadius::same(rounding), color.gamma_multiply(t));
+    }
+}
+
 /// A small filled circle in a category's colour.
 pub fn color_dot(ui: &mut Ui, color: Rgb) {
-    let (rect, _) = ui.allocate_exact_size(vec2(14.0, 14.0), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(size::ICON, size::ICON), Sense::hover());
     ui.painter()
         .circle_filled(rect.center(), 4.5, color32(color));
 }
 
 /// A thin bar `width` wide, filled to `share` (clamped to 0..=1).
 pub fn progress_bar(ui: &mut Ui, width: f32, share: f32, color: Color32) {
-    let p = palette(ui);
-    let (rect, _) = ui.allocate_exact_size(vec2(width, 6.0), Sense::hover());
-    let rounding = CornerRadius::same(3);
-    ui.painter().rect_filled(rect, rounding, p.hover);
-    let mut done = rect;
-    done.set_width(rect.width() * share.clamp(0.0, 1.0));
-    ui.painter().rect_filled(done, rounding, color);
+    let (rect, _) = ui.allocate_exact_size(vec2(width, size::BAR), Sense::hover());
+    paint_bar(ui.painter(), rect, share, color, palette(ui).hover);
+}
+
+/// A rounded track with its first `share` filled.
+pub fn paint_bar(painter: &Painter, rect: Rect, share: f32, color: Color32, track: Color32) {
+    let rounding = CornerRadius::same((rect.height() / 2.0) as u8);
+    painter.rect_filled(rect, rounding, track);
+    let share = share.clamp(0.0, 1.0);
+    if share > 0.0 {
+        let mut done = rect;
+        // At least round-cap wide, so a small share still reads as a dot.
+        done.set_width((rect.width() * share).max(rect.height()));
+        painter.rect_filled(done, rounding, color);
+    }
 }
 
 /// Shows the result of the last action in the theme's danger colour.
@@ -58,15 +80,17 @@ pub fn message(ui: &mut Ui, message: &Option<String>) {
 /// visible title is painted separately by the row.
 pub fn round_check(ui: &mut Ui, done: bool, label: &str) -> Response {
     let p = palette(ui);
-    let (rect, response) = ui.allocate_exact_size(vec2(20.0, 20.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(size::CHECK, size::CHECK), Sense::click());
     response.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, done, label));
+    let t = fade(ui, response.id, response.hovered());
     let center = rect.center();
     let painter = ui.painter();
     if done {
         painter.circle_filled(center, 8.5, p.accent);
         check_mark(painter, center, Color32::WHITE);
     } else {
-        let ring = if response.hovered() { p.accent } else { p.line };
+        painter.circle_filled(center, 8.0, p.accent_soft.gamma_multiply(t));
+        let ring = p.line.lerp_to_gamma(p.accent, t);
         painter.circle_stroke(center, 8.0, Stroke::new(1.5, ring));
     }
     response
@@ -82,7 +106,7 @@ fn check_mark(painter: &Painter, c: Pos2, color: Color32) {
 /// Its accessible name is the plain `done/total` text.
 pub fn progress_pie(ui: &mut Ui, done: usize, total: usize) -> Response {
     let p = palette(ui);
-    let (rect, response) = ui.allocate_exact_size(vec2(16.0, 16.0), Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(vec2(size::ICON, size::ICON), Sense::hover());
     response.widget_info(|| WidgetInfo::labeled(Role::Label, true, format!("{done}/{total}")));
     let (c, r) = (rect.center(), 6.5);
     let painter = ui.painter();
@@ -183,7 +207,7 @@ impl Icon {
             Icon::Doc => {
                 let s = Stroke::new(1.5, color);
                 let page = Rect::from_center_size(c, vec2(10.0, 13.0));
-                painter.rect_stroke(page, CornerRadius::same(2), s, egui::StrokeKind::Middle);
+                painter.rect_stroke(page, CornerRadius::same(2), s, StrokeKind::Middle);
                 for dy in [-2.5, 0.5, 3.5] {
                     painter.line_segment([c + vec2(-2.5, dy), c + vec2(2.5, dy)], s);
                 }
@@ -194,9 +218,10 @@ impl Icon {
                 } else {
                     1.0
                 };
+                // The tip points the way it goes: left for Back.
                 let s = Stroke::new(1.8, color);
-                painter.line_segment([c + vec2(2.0 * dir, -5.0), c + vec2(-3.0 * dir, 0.0)], s);
-                painter.line_segment([c + vec2(-3.0 * dir, 0.0), c + vec2(2.0 * dir, 5.0)], s);
+                painter.line_segment([c + vec2(-2.0 * dir, -5.0), c + vec2(3.0 * dir, 0.0)], s);
+                painter.line_segment([c + vec2(3.0 * dir, 0.0), c + vec2(-2.0 * dir, 5.0)], s);
             }
             Icon::Target => {
                 painter.circle_stroke(c, 6.5, Stroke::new(1.5, color));
@@ -248,34 +273,50 @@ fn star(painter: &Painter, c: Pos2, r: f32, color: Color32) {
 /// A quiet square icon button; `name` is its accessible label.
 pub fn icon_button(ui: &mut Ui, icon: Icon, name: &str, color: Color32) -> Response {
     let p = palette(ui);
-    let (rect, response) = ui.allocate_exact_size(vec2(26.0, 26.0), Sense::click());
+    let side = size::ICON_BUTTON;
+    let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
     response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
-    if response.hovered() {
-        ui.painter()
-            .rect_filled(rect, CornerRadius::same(6), p.hover);
-    }
+    let t = fade(ui, response.id, response.hovered());
+    faded_fill(ui.painter(), rect, radius::SM, p.hover, t);
     icon.paint(ui.painter(), rect, color);
     response.on_hover_text(name)
 }
 
-/// A rounded pill button: `fill` behind, `text` in `color`.
+/// A rounded pill button: `fill` behind, `text` in `color`. It deepens a
+/// little on hover.
 pub fn pill(ui: &mut Ui, text: &str, fill: Color32, color: Color32) -> Response {
-    ui.add(
-        Button::new(RichText::new(text).color(color))
-            .fill(fill)
-            .corner_radius(CornerRadius::same(14))
-            .min_size(vec2(0.0, 28.0)),
-    )
+    let p = palette(ui);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font(text::BODY), color);
+    let width = galley.size().x + 2.0 * space::MD + 2.0;
+    let (rect, response) = ui.allocate_exact_size(vec2(width, size::CONTROL), Sense::click());
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, text));
+    let t = fade(ui, response.id, response.hovered());
+    let fill = fill.lerp_to_gamma(p.text, 0.08 * t);
+    let painter = ui.painter();
+    painter.rect_filled(rect, CornerRadius::same(radius::PILL), fill);
+    painter.galley(rect.center() - galley.size() / 2.0, galley, color);
+    response
 }
 
-/// A screen's title: a coloured icon and a large bold name, Things-style.
+/// A screen's title: a coloured icon and a large semibold name, Things-style.
 pub fn screen_title(ui: &mut Ui, icon: Icon, color: Color32, title: &str) {
+    screen_header(ui, icon, color, title, None);
+}
+
+/// [`screen_title`] with a quiet line under it, such as today's date.
+pub fn screen_header(ui: &mut Ui, icon: Icon, color: Color32, title: &str, subtitle: Option<&str>) {
     ui.horizontal(|ui| {
-        let (rect, _) = ui.allocate_exact_size(vec2(30.0, 30.0), Sense::hover());
+        let side = size::TITLE_ICON;
+        let (rect, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
         icon.paint(ui.painter(), rect.expand(3.0), color);
         ui.heading(title);
     });
-    ui.add_space(16.0);
+    if let Some(subtitle) = subtitle {
+        ui.label(RichText::new(subtitle).color(palette(ui).secondary));
+    }
+    ui.add_space(space::LG);
 }
 
 /// A frameless text button, optionally in the accent colour.
@@ -285,16 +326,155 @@ pub fn text_button(ui: &mut Ui, text: &str, accent: bool) -> Response {
     ui.add(Button::new(RichText::new(text).color(color)).frame(false))
 }
 
-/// Small grey upper-case heading for a group of sidebar items.
+/// Small grey upper-case heading for a group of items.
 pub fn section_label(ui: &mut Ui, text: &str) {
-    ui.add_space(14.0);
+    ui.add_space(space::LG);
     ui.label(
         RichText::new(text.to_uppercase())
-            .small()
-            .strong()
+            .font(bold(ui, text::CAPTION))
             .color(palette(ui).secondary),
     );
-    ui.add_space(2.0);
+    ui.add_space(space::XS);
+}
+
+/// The card surface: soft fill, hairline border, rounded corners and a
+/// subtle shadow. Fills the available width.
+pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
+    let p = palette(ui);
+    Frame::new()
+        .fill(p.card)
+        .stroke(Stroke::new(1.0, p.hairline))
+        .corner_radius(CornerRadius::same(radius::LG))
+        .shadow(card_shadow(&p))
+        .inner_margin(Margin::symmetric(space::LG as i8, space::MD as i8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        })
+}
+
+/// Paints the card surface into `rect`, for cards drawn with the painter.
+pub fn paint_card(painter: &Painter, rect: Rect, p: &Palette) {
+    let rounding = CornerRadius::same(radius::LG);
+    painter.add(card_shadow(p).as_shape(rect, rounding));
+    painter.rect(
+        rect,
+        rounding,
+        p.card,
+        Stroke::new(1.0, p.hairline),
+        StrokeKind::Inside,
+    );
+}
+
+/// A full-width list row `size::ROW` high whose background fades in while
+/// the pointer is over it. `id` keeps the fade apart from other rows.
+pub fn list_row<R>(
+    ui: &mut Ui,
+    id: impl std::hash::Hash + std::fmt::Debug,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> R {
+    let p = palette(ui);
+    let background = ui.painter().add(Shape::Noop);
+    let inner = ui.allocate_ui_with_layout(
+        vec2(ui.available_width(), size::ROW),
+        Layout::left_to_right(Align::Center),
+        add,
+    );
+    let rect = inner.response.rect.expand2(vec2(space::SM, 0.0));
+    let t = fade(
+        ui,
+        ui.scope_id().with(("row", id)),
+        ui.rect_contains_pointer(rect),
+    );
+    if t > 0.0 {
+        ui.painter().set(
+            background,
+            Shape::rect_filled(
+                rect,
+                CornerRadius::same(radius::MD),
+                p.hover.gamma_multiply(t),
+            ),
+        );
+    }
+    inner.inner
+}
+
+/// Lays `add` out in a fixed-width column of a row, so columns line up
+/// from row to row. Long text should be truncated by the caller.
+pub fn column<R>(ui: &mut Ui, width: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    ui.scope_builder(
+        UiBuilder::new().layout(Layout::left_to_right(Align::Center)),
+        |ui| {
+            ui.set_width(width);
+            add(ui)
+        },
+    )
+    .inner
+}
+
+/// A one-line label cut short with "…" when it doesn't fit.
+pub fn truncated(ui: &mut Ui, text: impl Into<egui::WidgetText>) -> Response {
+    ui.add(Label::new(text).truncate())
+}
+
+/// One aligned chart row: a dot, a name column, a bar and a value column.
+/// Its accessible name is `"{name} {value}"`.
+pub fn bar_row(
+    ui: &mut Ui,
+    dot: Option<Color32>,
+    name: &str,
+    share: f32,
+    bar_color: Color32,
+    value: &str,
+) -> Response {
+    let p = palette(ui);
+    let width = ui.available_width();
+    let (rect, response) = ui.allocate_exact_size(vec2(width, size::ROW - 4.0), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, format!("{name} {value}")));
+    let painter = ui.painter_at(rect);
+    let y = rect.center().y;
+    let mut x = rect.left();
+    if let Some(color) = dot {
+        painter.circle_filled(pos2(x + size::ICON / 2.0, y), 4.5, color);
+    }
+    x += size::ICON + space::SM;
+    let name_width = size::LABEL_COLUMN - size::ICON - space::SM;
+    let galley = painter.layout_no_wrap(name.to_owned(), font(text::BODY), p.text);
+    let name_painter = ui.painter_at(Rect::from_x_y_ranges(x..=x + name_width, rect.y_range()));
+    name_painter.galley(pos2(x, y - galley.size().y / 2.0), galley, p.text);
+    x = rect.left() + size::LABEL_COLUMN + space::SM;
+    let bar_width =
+        (rect.right() - x - size::VALUE_COLUMN - space::MD).clamp(0.0, size::BAR_COLUMN);
+    let bar = Rect::from_min_size(pos2(x, y - size::BAR / 2.0), vec2(bar_width, size::BAR));
+    paint_bar(&painter, bar, share, bar_color, p.hover);
+    painter.text(
+        pos2(bar.right() + space::MD, y),
+        Align2::LEFT_CENTER,
+        value,
+        font(text::BODY),
+        p.secondary,
+    );
+    response
+}
+
+/// A calm placeholder for an empty list: an icon in a soft circle, a line
+/// of text and an optional hint.
+pub fn empty_state(ui: &mut Ui, icon: Icon, title: &str, hint: Option<&str>) {
+    let p = palette(ui);
+    ui.add_space(space::XL);
+    ui.vertical_centered(|ui| {
+        let side = size::EMPTY_ICON;
+        let (rect, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
+        ui.painter()
+            .circle_filled(rect.center(), side / 2.0, p.accent_soft);
+        icon.paint(ui.painter(), rect, p.accent);
+        ui.add_space(space::SM);
+        ui.label(RichText::new(title).color(p.text));
+        if let Some(hint) = hint {
+            ui.label(RichText::new(hint).small().color(p.secondary));
+        }
+    });
+    ui.add_space(space::XL);
 }
 
 /// One full-width sidebar row: an icon, a label and an optional count.
@@ -309,30 +489,43 @@ pub fn sidebar_row(
 ) -> Response {
     let p = palette(ui);
     let width = ui.available_width();
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 30.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(width, size::SIDEBAR_ROW), Sense::click());
     response.widget_info(|| WidgetInfo::selected(Role::Button, true, selected, name));
+    let hover = fade(
+        ui,
+        response.id.with("hover"),
+        response.hovered() && !selected,
+    );
+    let chosen = fade(ui, response.id.with("selected"), selected);
     let painter = ui.painter();
-    if selected || response.hovered() {
-        let fill = if selected { p.line } else { p.hover };
-        painter.rect_filled(rect, CornerRadius::same(6), fill);
+    let rounding = CornerRadius::same(radius::MD);
+    faded_fill(painter, rect, radius::MD, p.hover, hover);
+    if chosen > 0.0 {
+        painter.rect_filled(rect, rounding, p.selected.gamma_multiply(chosen));
     }
+    let icon_x = rect.left() + space::MD + size::ICON / 2.0;
     paint_icon(
         painter,
-        Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), vec2(16.0, 16.0)),
+        Rect::from_center_size(pos2(icon_x, rect.center().y), vec2(size::ICON, size::ICON)),
     );
+    let label_font = if selected {
+        bold(ui, text::BODY)
+    } else {
+        font(text::BODY)
+    };
     painter.text(
-        pos2(rect.left() + 34.0, rect.center().y),
-        egui::Align2::LEFT_CENTER,
+        pos2(icon_x + size::ICON / 2.0 + space::SM + 2.0, rect.center().y),
+        Align2::LEFT_CENTER,
         text,
-        egui::FontId::proportional(14.0),
+        label_font,
         p.text,
     );
     if let Some(count) = count.filter(|c| *c > 0) {
         painter.text(
-            pos2(rect.right() - 10.0, rect.center().y),
-            egui::Align2::RIGHT_CENTER,
+            pos2(rect.right() - space::MD, rect.center().y),
+            Align2::RIGHT_CENTER,
             count.to_string(),
-            egui::FontId::proportional(13.0),
+            font(text::SMALL),
             p.secondary,
         );
     }

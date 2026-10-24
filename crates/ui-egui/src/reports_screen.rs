@@ -1,14 +1,14 @@
 use std::time::{Duration, Instant};
 
-use egui::{Color32, CornerRadius, Frame, Margin, RichText, ScrollArea, Ui};
+use egui::{Color32, RichText, ScrollArea, Ui};
 use jiff::ToSpan;
 use jiff::civil::Date;
 use wt_core::repo::RepoResult;
 use wt_core::{Clipboard, Clock, ReportInput, Settings, my_time_report, office_report};
 
 use crate::ReportStore;
-use crate::theme::palette;
-use crate::widgets::{Icon, icon_button, message, pill, screen_title};
+use crate::theme::{bold, palette, space, text};
+use crate::widgets::{Icon, card, icon_button, message, pill, screen_title};
 
 /// How long "Copied" shows after a copy.
 const COPIED_FOR: Duration = Duration::from_secs(2);
@@ -55,7 +55,7 @@ impl ReportsScreen {
                 self.day_offset += 1;
             }
         });
-        ui.add_space(12.0);
+        ui.add_space(space::MD);
 
         let (office, mine) = match reports(store, settings, clock, day) {
             Ok(reports) => reports,
@@ -73,7 +73,7 @@ impl ReportsScreen {
                 &office,
                 clipboard,
             );
-            ui.add_space(16.0);
+            ui.add_space(space::XL);
             self.card(
                 ui,
                 Report::MyTime,
@@ -97,7 +97,7 @@ impl ReportsScreen {
     ) {
         let p = palette(ui);
         ui.horizontal(|ui| {
-            ui.label(RichText::new(title).strong());
+            ui.label(RichText::new(title).font(bold(ui, text::BODY)));
             let just_copied = self
                 .copied
                 .is_some_and(|(w, at)| w == which && at.elapsed() < COPIED_FOR);
@@ -114,15 +114,12 @@ impl ReportsScreen {
                 }
             }
         });
-        ui.add_space(6.0);
-        Frame::new()
-            .fill(p.sidebar)
-            .corner_radius(CornerRadius::same(10))
-            .inner_margin(Margin::same(14))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.label(RichText::new(text).monospace());
-            });
+        ui.add_space(space::SM);
+        card(ui, |ui| {
+            ui.add_space(space::XS);
+            ui.label(RichText::new(text).monospace().color(p.text));
+            ui.add_space(space::XS);
+        });
     }
 }
 
