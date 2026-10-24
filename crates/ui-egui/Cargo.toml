@@ -12,7 +12,9 @@ jiff.workspace = true
 wt-core.workspace = true
 
 [dev-dependencies]
-egui_kittest.workspace = true
+# `eframe` drives the whole app; `wgpu` + `snapshot` render offscreen PNGs
+# for the ignored frame-timing and screenshot tests.
+egui_kittest = { workspace = true, features = ["eframe", "wgpu", "snapshot"] }
 # Real store in memory for UI tests; the layering check ignores dev-dependencies.
 wt-storage.workspace = true
 

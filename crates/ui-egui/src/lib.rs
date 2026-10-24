@@ -1,6 +1,7 @@
 //! egui front end for WFH Tracker. It talks to the rest of the app only
 //! through the traits in `wt-core`, so the UI can be replaced on its own.
 
+mod cache;
 mod categories_screen;
 mod dashboard_screen;
 mod focus_screen;
@@ -22,11 +23,12 @@ use std::time::{Duration, Instant};
 use egui::{Context, ViewportCommand};
 use wt_core::{
     Autostart, BlockRepo, Clock, DistractionEventRepo, DistractionRuleRepo, ForegroundWatcher,
-    Notifier, SessionRepo, SettingsRepo,
+    Notifier, SessionRepo, SettingsRepo, TaskRepo,
 };
 
 use crate::widgets::Icon;
 
+pub use cache::CachedStore;
 pub use categories_screen::CategoriesScreen;
 pub use dashboard_screen::DashboardScreen;
 pub use focus_screen::FocusScreen;
@@ -109,7 +111,10 @@ impl ShellHandle {
 
 /// The app window. Closing it hides it to the tray; only [`ShellHandle::quit`] exits.
 pub struct WfhApp<S> {
-    store: S,
+    /// Every read and write goes through the cache, so frames don't query.
+    store: CachedStore<S>,
+    /// The minute (since the epoch) the cache was last refreshed for.
+    minute: Option<i64>,
     clock: Arc<dyn Clock>,
     autostart: Box<dyn Autostart>,
     notifier: Box<dyn Notifier>,
@@ -186,7 +191,8 @@ impl<S: Store> WfhApp<S> {
         };
         let settings = SettingsScreen::load(&store);
         let app = Self {
-            store,
+            store: CachedStore::new(store),
+            minute: None,
             clock: services.clock,
             autostart: services.autostart,
             notifier: services.notifier,
@@ -233,6 +239,13 @@ impl<S: Store> eframe::App for WfhApp<S> {
                 ctx.send_viewport_cmd(ViewportCommand::CancelClose);
                 ctx.send_viewport_cmd(ViewportCommand::Visible(false));
             }
+        }
+        // Reload once a minute too, as a safety net for anything that
+        // changes with time alone (writes already refresh the cache).
+        let minute = self.clock.now().as_second().div_euclid(60);
+        if self.minute != Some(minute) {
+            self.minute = Some(minute);
+            self.store.invalidate();
         }
         while let Ok(ShellCommand::ToggleMeeting) = self.commands.try_recv() {
             self.status.toggle_meeting(&self.store);
@@ -378,8 +391,9 @@ impl<S: Store> WfhApp<S> {
                 count,
                 name,
             );
-            if row.clicked() {
+            if row.clicked() && self.screen != screen {
                 self.screen = screen;
+                self.store.invalidate();
             }
         }
         self.status.quick_start(ui, &self.store);
