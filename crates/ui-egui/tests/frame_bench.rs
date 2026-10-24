@@ -279,7 +279,9 @@ fn system_fonts() -> Option<UiFonts> {
     })
 }
 
-fn app(name: &str) -> Harness<'static, WfhApp<SqliteStore>> {
+/// The whole app on a fresh store: five weeks of data when `seeded`, else
+/// only the default categories (to show the empty states).
+fn app(name: &str, seeded: bool) -> Harness<'static, WfhApp<SqliteStore>> {
     let clock = Arc::new(FixedClock::new(
         FIRST_DAY
             .parse::<jiff::civil::Date>()
@@ -290,7 +292,12 @@ fn app(name: &str) -> Harness<'static, WfhApp<SqliteStore>> {
         TimeZone::UTC,
     ));
     let store = SqliteStore::open(&db_path(name), clock.clone()).unwrap();
-    seed(&store, &clock);
+    if seeded {
+        seed(&store, &clock);
+    } else {
+        store.seed_defaults().unwrap();
+        goto(&clock, NOW.parse().unwrap());
+    }
     Harness::builder().with_size(SIZE).build_eframe(move |cc| {
         let services = Services {
             clock: clock as Arc<dyn Clock>,
@@ -316,7 +323,7 @@ fn open(h: &mut Harness<'_, WfhApp<SqliteStore>>, screen: &str) {
 #[ignore = "benchmark: run with --ignored --nocapture"]
 fn frame_times() {
     const FRAMES: usize = 300;
-    let mut h = app("bench");
+    let mut h = app("bench", true);
     h.run_steps(4);
     println!("frame_bench: {FRAMES} frames per screen, pointer moving every frame");
     let mut total = 0.0;
@@ -348,20 +355,35 @@ fn screenshots() {
         .join("../../target/ui-shots")
         .join(label);
     std::fs::create_dir_all(&dir).unwrap();
-    let mut h = app("shots");
-    h.set_render_cursor(false);
-    h.run_steps(4);
-    for (theme, suffix) in [(egui::Theme::Light, "light"), (egui::Theme::Dark, "dark")] {
-        h.ctx.set_theme(theme);
-        for screen in SCREENS {
-            open(&mut h, screen);
-            // Park the pointer on the sidebar's empty bottom so nothing shows hover.
-            h.hover_at(egui::pos2(20.0, SIZE.y - 10.0));
-            h.run_steps(30);
-            let image = h.render().unwrap();
-            let path = dir.join(format!("{}-{suffix}.png", screen.to_lowercase()));
-            image.save(&path).unwrap();
-            println!("screenshot: {}", path.display());
+    for (prefix, seeded) in [("", true), ("empty-", false)] {
+        let mut h = app(&format!("shots-{seeded}"), seeded);
+        h.set_render_cursor(false);
+        h.run_steps(4);
+        for (theme, suffix) in [(egui::Theme::Light, "light"), (egui::Theme::Dark, "dark")] {
+            h.ctx.set_theme(theme);
+            for screen in SCREENS {
+                open(&mut h, screen);
+                // Park the pointer on the sidebar's empty bottom so nothing shows hover.
+                h.hover_at(egui::pos2(20.0, SIZE.y - 10.0));
+                h.run_steps(30);
+                let name = format!("{prefix}{}-{suffix}.png", screen.to_lowercase());
+                save(&mut h, &dir.join(name));
+            }
+            if seeded {
+                // Hover states: a task row, and a sidebar row.
+                open(&mut h, "Today");
+                h.hover_at(egui::pos2(420.0, 437.0));
+                h.run_steps(30);
+                save(&mut h, &dir.join(format!("today-hover-{suffix}.png")));
+                h.hover_at(egui::pos2(100.0, 186.0));
+                h.run_steps(30);
+                save(&mut h, &dir.join(format!("sidebar-hover-{suffix}.png")));
+            }
         }
     }
+}
+
+fn save(h: &mut Harness<'_, WfhApp<SqliteStore>>, path: &std::path::Path) {
+    h.render().unwrap().save(path).unwrap();
+    println!("screenshot: {}", path.display());
 }
