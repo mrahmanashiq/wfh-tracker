@@ -13,7 +13,10 @@ use jiff::SignedDuration;
 use jiff::civil::Weekday;
 use wt_core::{Rgb, hours_text};
 
-use crate::theme::{FADE, Palette, bold, card_shadow, font, palette, radius, size, space, text};
+use crate::theme::{
+    FADE, Palette, bold, card_shadow, font, palette, radius, raised_shadow, size, space, stroke,
+    text,
+};
 
 const DAY_NAMES: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -76,59 +79,180 @@ pub fn message(ui: &mut Ui, message: &Option<String>) {
     }
 }
 
-/// A round checkbox, Things-style. `label` names it for accessibility; the
-/// visible title is painted separately by the row.
-pub fn round_check(ui: &mut Ui, done: bool, label: &str) -> Response {
-    let p = palette(ui);
+/// The two to-do checkbox shapes in a Things list.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CheckShape {
+    /// A to-do: a rounded square.
+    Square,
+    /// A checklist item: a smaller ring.
+    Small,
+}
+
+/// A Things-style checkbox in a [`size::CHECK`] column. `label` names it for
+/// accessibility; the visible title is painted separately by the row.
+pub fn task_check(ui: &mut Ui, done: bool, label: &str, shape: CheckShape) -> Response {
     let (rect, response) = ui.allocate_exact_size(vec2(size::CHECK, size::CHECK), Sense::click());
     response.widget_info(|| WidgetInfo::selected(Role::CheckBox, true, done, label));
     let t = fade(ui, response.id, response.hovered());
-    let center = rect.center();
-    let painter = ui.painter();
-    if done {
-        painter.circle_filled(center, 8.5, p.accent);
-        check_mark(painter, center, Color32::WHITE);
-    } else {
-        painter.circle_filled(center, 8.0, p.accent_soft.gamma_multiply(t));
-        let ring = p.line.lerp_to_gamma(p.accent, t);
-        painter.circle_stroke(center, 8.0, Stroke::new(1.5, ring));
-    }
+    paint_check(ui, rect.center(), shape, done, t);
     response
 }
 
-fn check_mark(painter: &Painter, c: Pos2, color: Color32) {
-    let stroke = Stroke::new(1.8, color);
-    painter.line_segment([c + vec2(-4.0, 0.2), c + vec2(-1.2, 3.0)], stroke);
-    painter.line_segment([c + vec2(-1.2, 3.0), c + vec2(4.2, -3.2)], stroke);
+/// An inert, faint checkbox: the "New To-Do" placeholder row's.
+pub fn placeholder_check(ui: &mut Ui, shape: CheckShape) {
+    let (rect, _) = ui.allocate_exact_size(vec2(size::CHECK, size::CHECK), Sense::hover());
+    paint_check(ui, rect.center(), shape, false, 0.0);
 }
 
-/// A small pie showing `done` of `total`, like a Things project icon.
-/// Its accessible name is the plain `done/total` text.
-pub fn progress_pie(ui: &mut Ui, done: usize, total: usize) -> Response {
+/// `hover` (0..=1) tints an open box towards the accent.
+fn paint_check(ui: &Ui, center: Pos2, shape: CheckShape, done: bool, hover: f32) {
     let p = palette(ui);
-    let (rect, response) = ui.allocate_exact_size(vec2(size::ICON, size::ICON), Sense::hover());
-    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, format!("{done}/{total}")));
-    let (c, r) = (rect.center(), 6.5);
     let painter = ui.painter();
-    painter.circle_stroke(c, r, Stroke::new(1.3, p.accent));
+    let border = Stroke::new(stroke::CHECK, p.check.lerp_to_gamma(p.accent, hover));
+    match shape {
+        CheckShape::Square => {
+            let side = size::CHECK_BOX;
+            let rect = Rect::from_center_size(center, vec2(side, side));
+            let rounding = CornerRadius::same(radius::CHECK);
+            if done {
+                painter.rect_filled(rect, rounding, p.accent);
+                check_mark(painter, center, 1.0, Color32::WHITE);
+            } else {
+                painter.rect_filled(rect, rounding, p.accent_soft.gamma_multiply(hover));
+                painter.rect_stroke(rect, rounding, border, StrokeKind::Inside);
+            }
+        }
+        CheckShape::Small => {
+            let r = size::CHECK_SMALL / 2.0;
+            if done {
+                painter.circle_filled(center, r, p.accent);
+                check_mark(
+                    painter,
+                    center,
+                    size::CHECK_SMALL / size::CHECK_BOX,
+                    Color32::WHITE,
+                );
+            } else {
+                painter.circle_filled(center, r, p.accent_soft.gamma_multiply(hover));
+                painter.circle_stroke(center, r - stroke::CHECK / 2.0, border);
+            }
+        }
+    }
+}
+
+/// A tick drawn for a [`size::CHECK_BOX`] box, scaled by `scale`.
+fn check_mark(painter: &Painter, c: Pos2, scale: f32, color: Color32) {
+    let s = Stroke::new(stroke::TICK * scale.max(0.8), color);
+    let at = |x: f32, y: f32| c + vec2(x, y) * scale;
+    painter.line_segment([at(-3.6, 0.2), at(-1.1, 2.8)], s);
+    painter.line_segment([at(-1.1, 2.8), at(3.8, -2.9)], s);
+}
+
+/// A small pie showing `finished` of `total`, like a Things project icon.
+/// Clicking it ticks the project by hand (`done` is its own state). Its
+/// accessible name is the plain `finished/total` text.
+pub fn progress_pie(ui: &mut Ui, finished: usize, total: usize, done: bool) -> Response {
+    let p = palette(ui);
+    let (rect, response) = ui.allocate_exact_size(vec2(size::CHECK, size::CHECK), Sense::click());
+    response.widget_info(|| {
+        WidgetInfo::selected(Role::CheckBox, true, done, format!("{finished}/{total}"))
+    });
+    let t = fade(ui, response.id, response.hovered());
+    let (c, r) = (rect.center(), size::CHECK_BOX / 2.0 - 1.0);
+    let ring = p.accent.lerp_to_gamma(p.text, 0.25 * t);
+    let painter = ui.painter();
+    painter.circle_stroke(c, r, Stroke::new(stroke::CHECK, ring));
     let share = if total == 0 {
         0.0
     } else {
-        done as f32 / total as f32
+        finished as f32 / total as f32
     };
-    if share >= 1.0 {
-        painter.circle_filled(c, r - 1.8, p.accent);
+    let inner = r - 2.0;
+    if share >= 1.0 || done {
+        painter.circle_filled(c, inner, ring);
     } else if share > 0.0 {
         let steps = (32.0 * share).ceil().max(2.0) as usize;
-        let inner = r - 1.8;
         let mut points = vec![c];
         points.extend((0..=steps).map(|i| {
             let a = -TAU / 4.0 + TAU * share * i as f32 / steps as f32;
             c + vec2(a.cos(), a.sin()) * inner
         }));
-        painter.add(Shape::convex_polygon(points, p.accent, Stroke::NONE));
+        painter.add(Shape::convex_polygon(points, ring, Stroke::NONE));
     }
     response
+}
+
+/// A Things-style tag: a small muted capsule with a dot in the category's
+/// colour. Its accessible name is `name`.
+pub fn tag(ui: &mut Ui, name: &str, color: Color32) -> Response {
+    let p = palette(ui);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(name.to_owned(), font(text::TAG), p.secondary);
+    let dot = size::TAG_DOT;
+    let pad = space::SM;
+    let width = pad + dot + space::XS + galley.size().x + pad;
+    let (rect, response) = ui.allocate_exact_size(vec2(width, size::TAG), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, name));
+    let painter = ui.painter();
+    painter.rect_filled(rect, CornerRadius::same(radius::TAG), p.tag);
+    let y = rect.center().y;
+    painter.circle_filled(pos2(rect.left() + pad + dot / 2.0, y), dot / 2.0, color);
+    let x = rect.left() + pad + dot + space::XS;
+    painter.galley(pos2(x, y - galley.size().y / 2.0), galley, p.secondary);
+    response
+}
+
+/// Restyles `ui` so a [`egui::ComboBox`] in it looks like a [`tag`]: a
+/// small muted capsule that fits its text.
+pub fn tag_style(ui: &mut Ui) {
+    let p = palette(ui);
+    let style = ui.style_mut();
+    style.spacing.button_padding = vec2(space::SM, 0.0);
+    style.spacing.interact_size.y = size::TAG;
+    style.spacing.icon_width = space::SM;
+    style.spacing.icon_spacing = space::XS;
+    style.override_font_id = Some(font(text::TAG));
+    let w = &mut style.visuals.widgets;
+    for (v, fill) in [
+        (&mut w.inactive, p.tag),
+        (&mut w.hovered, p.selected),
+        (&mut w.active, p.line),
+        (&mut w.open, p.selected),
+    ] {
+        v.bg_fill = fill;
+        v.weak_bg_fill = fill;
+        v.bg_stroke = Stroke::NONE;
+        v.corner_radius = CornerRadius::same(radius::TAG);
+        v.fg_stroke = Stroke::new(stroke::HAIRLINE, p.secondary);
+    }
+}
+
+/// The running task's live time and its stop control: a small blue capsule.
+/// The whole capsule is the "Stop" button; the time shows inside it.
+pub fn timer_capsule(ui: &mut Ui, time: &str) -> Response {
+    let p = palette(ui);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(time.to_owned(), font(text::SMALL), p.accent);
+    let pad = space::SM;
+    let stop = space::SM;
+    let width = pad + galley.size().x + space::SM + stop + pad;
+    let (rect, response) = ui.allocate_exact_size(vec2(width, size::CAPSULE), Sense::click());
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Stop"));
+    let t = fade(ui, response.id, response.hovered());
+    let painter = ui.painter();
+    let fill = p.accent_soft.lerp_to_gamma(p.selection, t);
+    painter.rect_filled(rect, CornerRadius::same(radius::PILL), fill);
+    let y = rect.center().y;
+    painter.galley(
+        pos2(rect.left() + pad, y - galley.size().y / 2.0),
+        galley,
+        p.accent,
+    );
+    let square = Rect::from_center_size(pos2(rect.right() - pad - stop / 2.0, y), vec2(stop, stop));
+    painter.rect_filled(square, CornerRadius::same(radius::STOP), p.accent);
+    response.on_hover_text("Stop")
 }
 
 #[derive(Clone, Copy)]
@@ -347,6 +471,24 @@ pub fn card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> 
         .corner_radius(CornerRadius::same(radius::LG))
         .shadow(card_shadow(&p))
         .inner_margin(Margin::symmetric(space::LG as i8, space::MD as i8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        })
+}
+
+/// A raised card, lifted off the list by a deeper shadow: the inline editor
+/// a task opens into, Things-style. It reaches [`space::SM`] past the
+/// available width on each side, so its content lines up with the rows.
+pub fn raised_card<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
+    let p = palette(ui);
+    Frame::new()
+        .fill(p.raised)
+        .stroke(Stroke::new(stroke::HAIRLINE, p.hairline))
+        .corner_radius(CornerRadius::same(radius::MD))
+        .shadow(raised_shadow(&p))
+        .inner_margin(Margin::same(space::SM as i8))
+        .outer_margin(Margin::symmetric(-(space::SM as i8), 0))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add(ui)

@@ -1,42 +1,55 @@
 use std::collections::HashMap;
 
+use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Button, ComboBox, CornerRadius, DragValue, Layout, RichText, Sense, Shape, Stroke,
-    TextEdit, Ui, vec2,
+    Align, Color32, ComboBox, CornerRadius, DragValue, Layout, Rect, RichText, Role, Sense, Shape,
+    Stroke, TextEdit, TextFormat, Ui, UiBuilder, WidgetInfo, vec2,
 };
 use jiff::SignedDuration;
 use wt_core::repo::RepoResult;
 use wt_core::task::MAX_DEPTH;
 use wt_core::{
     Category, CategoryRepo, Clock, Id, Placement, SessionRepo, Settings, Task, TaskRepo, TaskTree,
-    TimerTarget, duration_text, today_view, tracked_time,
+    TimerTarget, display_order, duration_text, shows_tag, today_view, tracked_time,
 };
 
-use crate::theme::{FADE, font, palette, radius, size, space, text};
+use crate::theme::{FADE, bold, font, palette, radius, size, space, stroke, text};
 use crate::widgets::{
-    DeleteClick, Icon, color32, delete_buttons, empty_state, icon_button, message, progress_pie,
-    round_check, screen_header,
+    CheckShape, DeleteClick, Icon, color32, delete_buttons, empty_state, icon_button, message,
+    pill, placeholder_check, progress_pie, raised_card, screen_header, tag, tag_style, task_check,
+    text_button, timer_capsule,
 };
 
-/// How far each level of sub-tasks is indented.
-const INDENT: f32 = space::XL + space::XS;
-/// Room the new-task field leaves for the category picker and "Add task".
-const NEW_TASK_TRAILING: f32 = size::PICKER + 100.0;
+/// How far checklist items sit in from their to-do: one checkbox column, so
+/// their ring lines up under the to-do's title.
+const INDENT: f32 = size::CHECK + space::SM;
+/// The gap above each project group.
+const GROUP_GAP: f32 = space::XL;
+/// Slots for the hover actions: Start, Add sub-task, Edit and Delete. Their
+/// room is always kept, so the time column doesn't shift as they fade in.
+const ACTION_SLOTS: f32 = 4.0;
+/// Room the new-task field leaves for the category tag and "Add task".
+const NEW_TASK_TRAILING: f32 = size::PICKER + size::TIME_COLUMN;
 
-/// Today: open tasks carried over plus anything finished today.
+/// Today: open tasks carried over plus anything finished today, drawn like
+/// the Things 3 Today list.
 #[derive(Default)]
 pub struct TasksScreen {
     new_title: String,
     new_category: Option<Id>,
-    /// Top-level task whose "add sub-task" field is open, with its text.
+    /// Task whose "add sub-task" field is open, with its text.
     adding_under: Option<(Id, String)>,
     renaming: Option<EditDraft>,
     confirm_delete: Option<Id>,
     message: Option<String>,
     /// The task whose timer is running; refreshed every frame.
     running: Option<Id>,
-    /// The row under the pointer last frame; only it shows its actions.
+    /// The row under the pointer last frame; only it fades its actions in.
     hovered: Option<Id>,
+    /// The row under the pointer this frame, found while drawing.
+    pointer_on: Option<Id>,
+    /// The row last clicked, drawn with Things' soft blue highlight.
+    selected: Option<Id>,
 }
 
 /// A task being edited. Category and break interval apply to top-level tasks only.
@@ -53,6 +66,7 @@ enum Action {
     Add,
     AddSubtask,
     Toggle(Id, bool),
+    Select(Id),
     OpenSubtask(Id),
     OpenRename(EditDraft),
     Rename,
@@ -63,11 +77,49 @@ enum Action {
     Close,
 }
 
+/// How a row reads, by its place in the tree.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Kind {
+    /// A top-level task with sub-tasks: a group heading with a pie.
+    Project,
+    /// A top-level task without sub-tasks, or a sub-task: a square box.
+    ToDo,
+    /// A third-level task: a small ring and smaller, muted text.
+    Checklist,
+}
+
+impl Kind {
+    fn of(tree: &TaskTree, depth: usize) -> Self {
+        match depth {
+            0 if tree.progress.is_some() => Kind::Project,
+            0 | 1 => Kind::ToDo,
+            _ => Kind::Checklist,
+        }
+    }
+
+    /// The box this row shows when it is edited or has no pie.
+    fn shape(self) -> CheckShape {
+        match self {
+            Kind::Project | Kind::ToDo => CheckShape::Square,
+            Kind::Checklist => CheckShape::Small,
+        }
+    }
+
+    /// The box its sub-tasks get.
+    fn child_shape(self) -> CheckShape {
+        match self {
+            Kind::Project => CheckShape::Square,
+            Kind::ToDo | Kind::Checklist => CheckShape::Small,
+        }
+    }
+}
+
 /// What one row draws.
 struct Row<'a> {
     task: &'a Task,
+    kind: Kind,
     progress: Option<(usize, usize)>,
-    /// Shown as a tag on top-level rows only.
+    /// The tag, where it adds information (see [`shows_tag`]).
     category: Option<&'a Category>,
     /// Time tracked on it today (a parent includes everything below it).
     time: SignedDuration,
@@ -120,7 +172,8 @@ impl TasksScreen {
         message(ui, &self.message);
         ui.add_space(space::SM);
 
-        let view = today_view(&all, today, &clock.time_zone());
+        let tz = clock.time_zone();
+        let view = display_order(today_view(&all, today, &tz));
         if view.is_empty() {
             ui.add_space(space::XL);
             empty_state(
@@ -130,7 +183,6 @@ impl TasksScreen {
                 Some("Type a to-do above and press Enter."),
             );
         }
-        let tz = clock.time_zone();
         let own_time = |id: Id| tracked_time(&sessions, TimerTarget::Task(id), today, &tz, now);
         let family_time: HashMap<Id, SignedDuration> = all
             .iter()
@@ -141,67 +193,76 @@ impl TasksScreen {
             cats: &cats,
             family_time: &family_time,
         };
-        let mut hovered = None;
+        self.pointer_on = None;
         egui::ScrollArea::vertical()
             .auto_shrink(false)
             .show(ui, |ui| {
-                for tree in &view {
-                    self.tree_rows(ui, tree, 0, &context, &mut hovered, &mut action);
-                    ui.add_space(space::XS);
+                ui.spacing_mut().item_spacing.y = space::XXS;
+                for (i, tree) in view.iter().enumerate() {
+                    if i > 0 && tree.progress.is_some() {
+                        ui.add_space(GROUP_GAP);
+                    }
+                    self.tree_rows(ui, tree, None, 0, &context, &mut action);
                 }
             });
-        self.hovered = hovered;
+        self.hovered = self.pointer_on;
 
         if let Some(action) = action {
             self.apply(action, store);
         }
     }
 
-    /// A task's row, then (indented, Things-style without a guide line) the
-    /// rows below it and the "add sub-task" field when it's open.
+    /// A task's row, then the rows below it and the "add sub-task" field
+    /// when it's open. A project's to-dos sit flush with its heading, as in
+    /// Things; a to-do's checklist sits in by one checkbox column.
     fn tree_rows(
         &mut self,
         ui: &mut Ui,
         tree: &TaskTree,
+        parent: Option<&Task>,
         depth: usize,
         context: &RowContext<'_>,
-        hovered: &mut Option<Id>,
         action: &mut Option<Action>,
     ) {
         let id = tree.task.meta.id;
+        let kind = Kind::of(tree, depth);
         let row = Row {
             task: &tree.task,
+            kind,
             progress: tree.progress,
-            category: (depth == 0)
+            category: shows_tag(&tree.task, parent)
                 .then(|| context.by_id.get(&tree.task.category_id).copied())
                 .flatten(),
             time: context.family_time.get(&id).copied().unwrap_or_default(),
             depth,
         };
-        self.task_row(ui, &row, context.cats, hovered, action);
+        self.task_row(ui, &row, context.cats, action);
         let adding_here = self.adding_under.as_ref().is_some_and(|a| a.0 == id);
         if tree.children.is_empty() && !adding_here {
             return;
         }
-        ui.horizontal(|ui| {
-            ui.add_space(INDENT);
-            ui.vertical(|ui| {
-                for child in &tree.children {
-                    self.tree_rows(ui, child, depth + 1, context, hovered, action);
-                }
-                self.subtask_field(ui, id, action);
+        let mut below = |ui: &mut Ui| {
+            for child in &tree.children {
+                self.tree_rows(ui, child, Some(&tree.task), depth + 1, context, action);
+            }
+            self.subtask_field(ui, id, kind.child_shape(), action);
+        };
+        if kind == Kind::Project {
+            below(ui);
+        } else {
+            ui.horizontal(|ui| {
+                ui.add_space(INDENT);
+                ui.vertical(below);
             });
-        });
+        }
     }
 
-    /// Things' "New To-Do" line: a ring, a borderless field and a category picker.
+    /// Things' "New To-Do" placeholder row: a faint box, grey placeholder
+    /// text and a quiet category tag.
     fn new_task_line(&mut self, ui: &mut Ui, cats: &[Category], action: &mut Option<Action>) {
-        let p = palette(ui);
-        let row = vec2(ui.available_width(), size::ROW);
+        let row = vec2(ui.available_width(), size::TASK_ROW);
         ui.allocate_ui_with_layout(row, Layout::left_to_right(Align::Center), |ui| {
-            let (rect, _) = ui.allocate_exact_size(vec2(size::CHECK, size::CHECK), Sense::hover());
-            ui.painter()
-                .circle_stroke(rect.center(), 8.0, Stroke::new(1.5, p.line));
+            placeholder_check(ui, CheckShape::Square);
             let field = ui
                 .add(
                     TextEdit::singleline(&mut self.new_title)
@@ -209,7 +270,7 @@ impl TasksScreen {
                         .frame(egui::Frame::new())
                         .margin(vec2(0.0, 0.0))
                         .align(egui::Align2::LEFT_CENTER)
-                        .min_size(vec2(0.0, size::CONTROL))
+                        .min_size(vec2(0.0, size::TASK_ROW))
                         .font(font(text::TASK))
                         .desired_width(
                             (ui.available_width() - NEW_TASK_TRAILING).max(size::PICKER),
@@ -217,19 +278,14 @@ impl TasksScreen {
                 )
                 .accessible_name("New task title");
             let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            category_picker(ui, "new_task_category", cats, &mut self.new_category);
-            let add = !self.new_title.is_empty()
-                && ui
-                    .add(Button::new(RichText::new("Add task").color(p.accent)).frame(false))
-                    .clicked();
-            if add || enter {
-                *action = Some(Action::Add);
-            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let add = !self.new_title.is_empty() && text_button(ui, "Add task", true).clicked();
+                if add || enter {
+                    *action = Some(Action::Add);
+                }
+                category_picker(ui, "new_task_category", cats, &mut self.new_category);
+            });
         });
-        ui.add_space(space::XS);
-        let y = ui.cursor().top();
-        ui.painter()
-            .hline(ui.max_rect().x_range(), y, Stroke::new(1.0, p.hairline));
     }
 
     fn task_row(
@@ -237,34 +293,64 @@ impl TasksScreen {
         ui: &mut Ui,
         row: &Row<'_>,
         cats: &[Category],
-        hovered: &mut Option<Id>,
         action: &mut Option<Action>,
     ) {
-        let p = palette(ui);
         let id = row.task.meta.id;
+        if let Some(draft) = self.renaming.as_mut().filter(|d| d.id == id) {
+            edit_card(ui, draft, row.kind.shape(), cats, action);
+            return;
+        }
+        let p = palette(ui);
         let running = self.running == Some(id);
-        let show_actions = running || self.hovered == Some(id);
 
+        // The row's own click (selection) is registered first, so the
+        // checkbox and the icons drawn over it win their clicks.
+        let rect = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), size::TASK_ROW));
         let background = ui.painter().add(Shape::Noop);
-        let inner = ui.allocate_ui_with_layout(
-            vec2(ui.available_width(), size::ROW),
-            Layout::left_to_right(Align::Center),
-            |ui| {
-                if let Some(draft) = self.renaming.as_mut().filter(|d| d.id == id) {
-                    edit_fields(ui, draft, cats, action);
-                    return;
-                }
+        if ui
+            .interact(rect, ui.scope_id().with(("task-row", id)), Sense::click())
+            .clicked()
+        {
+            *action = Some(Action::Select(id));
+        }
+        let hover = ui.ctx().animate_bool_with_time(
+            ui.scope_id().with(("task-hover", id)),
+            self.hovered == Some(id),
+            FADE,
+        );
 
+        ui.scope_builder(
+            UiBuilder::new()
+                .max_rect(rect)
+                .layout(Layout::left_to_right(Align::Center)),
+            |ui| {
+                ui.set_min_size(rect.size());
                 let done = row.task.is_done();
-                if round_check(ui, done, &row.task.title).clicked() {
+                let toggled = match (row.kind, row.progress) {
+                    (Kind::Project, Some((finished, total))) => {
+                        progress_pie(ui, finished, total, done).clicked()
+                    }
+                    _ => task_check(ui, done, &row.task.title, row.kind.shape()).clicked(),
+                };
+                if toggled {
                     *action = Some(Action::Toggle(id, !done));
                 }
-                title(ui, &row.task.title, done, running);
-                if let Some((finished, total)) = row.progress {
-                    progress_pie(ui, finished, total);
+
+                let trailing = trailing_width(ui, row.time, running);
+                let tag_room = row.category.map_or(0.0, |_| size::PICKER);
+                let room = (ui.available_width() - trailing - tag_room).max(size::PICKER);
+                title(ui, row, done, room);
+                if row.kind != Kind::Project
+                    && let Some((finished, total)) = row.progress
+                {
+                    ui.label(
+                        RichText::new(format!("{finished}/{total}"))
+                            .font(font(text::TAG))
+                            .color(p.secondary),
+                    );
                 }
                 if let Some(cat) = row.category {
-                    ui.label(RichText::new(&cat.name).small().color(color32(cat.color)));
+                    tag(ui, &cat.name, color32(cat.color));
                 }
 
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
@@ -276,101 +362,74 @@ impl TasksScreen {
                         }
                         return;
                     }
-                    if show_actions {
-                        self.row_icons(ui, row.task, row.depth, action);
-                    }
+                    row_actions(ui, row, running, hover, action);
                     if running {
-                        if icon_button(ui, Icon::Stop, "Stop", p.accent).clicked() {
+                        if timer_capsule(ui, &elapsed(row.time)).clicked() {
                             *action = Some(Action::Stop);
                         }
-                        ui.label(RichText::new(elapsed(row.time)).color(p.accent));
-                        return;
-                    }
-                    if show_actions && icon_button(ui, Icon::Play, "Start", p.secondary).clicked() {
-                        *action = Some(Action::Start(id));
-                    }
-                    if row.time.is_positive() {
+                    } else if row.time.is_positive() {
                         ui.label(
                             RichText::new(duration_text(row.time))
-                                .small()
+                                .font(font(text::SMALL))
                                 .color(p.secondary),
                         );
                     }
                 });
             },
         );
-        let rect = inner.response.rect;
-        let hover = ui.ctx().animate_bool_with_time(
-            ui.scope_id().with(("task-hover", id)),
-            self.hovered == Some(id),
-            FADE,
-        );
-        let fill = if running {
-            Some(p.accent_soft)
-        } else {
-            (hover > 0.0).then(|| p.hover.gamma_multiply(hover))
-        };
-        if let Some(fill) = fill {
+
+        if self.selected == Some(id) {
             ui.painter().set(
                 background,
                 Shape::rect_filled(
                     rect.expand2(vec2(space::SM, 0.0)),
                     CornerRadius::same(radius::MD),
-                    fill,
+                    p.selection,
                 ),
             );
         }
+        if row.kind == Kind::Project {
+            ui.painter().hline(
+                rect.x_range(),
+                rect.bottom(),
+                Stroke::new(stroke::HAIRLINE, p.hairline),
+            );
+        }
         if ui.rect_contains_pointer(rect) {
-            *hovered = Some(id);
+            self.pointer_on = Some(id);
         }
     }
 
-    /// The row's icons, shown on hover: delete, edit, add a sub-task.
-    fn row_icons(&self, ui: &mut Ui, task: &Task, depth: usize, action: &mut Option<Action>) {
-        let p = palette(ui);
-        let id = task.meta.id;
-        let top_level = task.parent_id.is_none();
-        if let Some(DeleteClick::Arm) = delete_buttons(ui, false) {
-            *action = Some(Action::ArmDelete(Some(id)));
-        }
-        if icon_button(ui, Icon::Pencil, "Edit", p.secondary).clicked() {
-            *action = Some(Action::OpenRename(EditDraft {
-                id,
-                title: task.title.clone(),
-                category: top_level.then_some(task.category_id),
-                break_interval: task.break_interval_min,
-                top_level,
-            }));
-        }
-        let can_nest = depth + 1 < MAX_DEPTH;
-        if can_nest && icon_button(ui, Icon::Plus, "Add sub-task", p.secondary).clicked() {
-            *action = Some(Action::OpenSubtask(id));
-        }
-    }
-
-    fn subtask_field(&mut self, ui: &mut Ui, parent: Id, action: &mut Option<Action>) {
+    /// The "add sub-task" field, as a placeholder row with a faint box of
+    /// the shape the new task will get.
+    fn subtask_field(
+        &mut self,
+        ui: &mut Ui,
+        parent: Id,
+        shape: CheckShape,
+        action: &mut Option<Action>,
+    ) {
         let Some((_, text)) = self.adding_under.as_mut().filter(|a| a.0 == parent) else {
             return;
         };
-        let p = palette(ui);
-        ui.horizontal(|ui| {
+        let row = vec2(ui.available_width(), size::TASK_ROW);
+        ui.allocate_ui_with_layout(row, Layout::left_to_right(Align::Center), |ui| {
+            placeholder_check(ui, shape);
             let field = ui
                 .add(
                     TextEdit::singleline(text)
                         .hint_text("New sub-task")
-                        .frame(egui::Frame::new()),
+                        .frame(egui::Frame::new())
+                        .margin(vec2(0.0, 0.0))
+                        .font(font(text_size(shape))),
                 )
                 .accessible_name("Sub-task title");
             field.request_focus();
             let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-            if ui
-                .add(Button::new(RichText::new("Add").color(p.accent)).frame(false))
-                .clicked()
-                || enter
-            {
+            if text_button(ui, "Add", true).clicked() || enter {
                 *action = Some(Action::AddSubtask);
             }
-            if ui.add(Button::new("Cancel").frame(false)).clicked() {
+            if text_button(ui, "Cancel", false).clicked() {
                 *action = Some(Action::Close);
             }
         });
@@ -393,6 +452,10 @@ impl TasksScreen {
                 None => Ok(()),
             },
             Action::Toggle(id, done) => tasks.set_done(id, done),
+            Action::Select(id) => {
+                self.selected = Some(id);
+                return;
+            }
             Action::OpenSubtask(id) => {
                 self.adding_under = Some((id, String::new()));
                 Ok(())
@@ -425,53 +488,150 @@ impl TasksScreen {
     }
 }
 
-/// The task title, painted rather than added as a label so the checkbox stays
-/// the one accessible element named after the task.
-fn title(ui: &mut Ui, text: &str, done: bool, running: bool) {
-    let p = palette(ui);
-    let color = if done { p.secondary } else { p.text };
-    let font = font(text::TASK);
-    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, color);
-    let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
-    let painter = ui.painter();
-    if running {
-        // Faux bold for the running task: draw twice, half a pixel apart.
-        painter.galley(rect.min + vec2(0.5, 0.0), galley.clone(), color);
+/// The row's quiet actions, right to left: Delete, Edit, Add sub-task and
+/// Start. They fade in with `hover` (0..=1) and keep their room when hidden
+/// or missing, so columns stay put.
+fn row_actions(ui: &mut Ui, row: &Row<'_>, running: bool, hover: f32, action: &mut Option<Action>) {
+    if hover <= 0.0 {
+        ui.add_space(actions_width(ui));
+        return;
     }
-    painter.galley(rect.min, galley, color);
-    if done {
-        painter.hline(
-            rect.x_range(),
-            rect.center().y,
-            Stroke::new(1.0, p.secondary),
-        );
+    let color = palette(ui).secondary.gamma_multiply(hover);
+    let task = row.task;
+    let id = task.meta.id;
+    let top_level = task.parent_id.is_none();
+    if icon_button(ui, Icon::Trash, "Delete", color).clicked() {
+        *action = Some(Action::ArmDelete(Some(id)));
+    }
+    if icon_button(ui, Icon::Pencil, "Edit", color).clicked() {
+        *action = Some(Action::OpenRename(EditDraft {
+            id,
+            title: task.title.clone(),
+            category: top_level.then_some(task.category_id),
+            break_interval: task.break_interval_min,
+            top_level,
+        }));
+    }
+    let can_nest = row.depth + 1 < MAX_DEPTH;
+    slot(ui, can_nest, |ui| {
+        if icon_button(ui, Icon::Plus, "Add sub-task", color).clicked() {
+            *action = Some(Action::OpenSubtask(id));
+        }
+    });
+    slot(ui, !running, |ui| {
+        if icon_button(ui, Icon::Play, "Start", color).clicked() {
+            *action = Some(Action::Start(id));
+        }
+    });
+}
+
+/// One action slot: `add` when `shown`, else the same room left empty.
+fn slot(ui: &mut Ui, shown: bool, add: impl FnOnce(&mut Ui)) {
+    if shown {
+        add(ui);
+    } else {
+        ui.add_space(size::ICON_BUTTON);
     }
 }
 
-fn edit_fields(ui: &mut Ui, draft: &mut EditDraft, cats: &[Category], action: &mut Option<Action>) {
+/// Width of the hover actions' block.
+fn actions_width(ui: &Ui) -> f32 {
+    let gap = ui.spacing().item_spacing.x;
+    ACTION_SLOTS * (size::ICON_BUTTON + gap) - gap
+}
+
+/// Room the right side of a row takes: the actions plus the time.
+fn trailing_width(ui: &Ui, time: SignedDuration, running: bool) -> f32 {
+    let time = if running || time.is_positive() {
+        size::TIME_COLUMN
+    } else {
+        0.0
+    };
+    actions_width(ui) + time + ui.spacing().item_spacing.x
+}
+
+/// Title size for a row whose box is `shape`.
+fn text_size(shape: CheckShape) -> f32 {
+    match shape {
+        CheckShape::Square => text::TASK,
+        CheckShape::Small => text::CHECKLIST,
+    }
+}
+
+/// The task title, painted rather than added as a label so a to-do's
+/// checkbox stays the one accessible element named after it. A project's
+/// heading has a pie instead, so there the title carries the name. Cut
+/// short with "…" past `max_width`.
+fn title(ui: &mut Ui, row: &Row<'_>, done: bool, max_width: f32) {
     let p = palette(ui);
-    ui.add(TextEdit::singleline(&mut draft.title).desired_width(size::FIELD))
-        .accessible_name("Task title");
-    if draft.top_level {
-        category_picker(ui, ("rename_category", draft.id), cats, &mut draft.category);
-        let mut own = draft.break_interval.is_some();
-        if ui.checkbox(&mut own, "Own break every").changed() {
-            draft.break_interval = own.then_some(Settings::default().break_interval_min);
-        }
-        if let Some(minutes) = draft.break_interval.as_mut() {
-            ui.add(DragValue::new(minutes).range(1..=180).suffix(" min"))
-                .accessible_name("Break every (min)");
-        }
+    let (font, color) = match row.kind {
+        Kind::Project => (bold(ui, text::TASK), p.text),
+        Kind::ToDo => (font(text::TASK), p.text),
+        Kind::Checklist => (font(text::CHECKLIST), p.muted),
+    };
+    let color = if done { p.secondary } else { color };
+    let mut job =
+        LayoutJob::single_section(row.task.title.clone(), TextFormat::simple(font, color));
+    job.wrap = TextWrapping::truncate_at_width(max_width);
+    let galley = ui.painter().layout_job(job);
+    let (rect, response) = ui.allocate_exact_size(galley.size(), Sense::hover());
+    if row.kind == Kind::Project {
+        response.widget_info(|| WidgetInfo::labeled(Role::Label, true, &row.task.title));
     }
-    if ui
-        .add(Button::new(RichText::new("Save").color(p.accent)).frame(false))
-        .clicked()
-    {
-        *action = Some(Action::Rename);
-    }
-    if ui.add(Button::new("Cancel").frame(false)).clicked() {
-        *action = Some(Action::Close);
-    }
+    ui.painter().galley(rect.min, galley, color);
+}
+
+/// The task opened for editing: a raised card inside the list holding the
+/// title and, for a top-level task, its category and break interval.
+fn edit_card(
+    ui: &mut Ui,
+    draft: &mut EditDraft,
+    shape: CheckShape,
+    cats: &[Category],
+    action: &mut Option<Action>,
+) {
+    let p = palette(ui);
+    ui.add_space(space::XS);
+    raised_card(ui, |ui| {
+        let line = vec2(ui.available_width(), size::TASK_ROW);
+        ui.allocate_ui_with_layout(line, Layout::left_to_right(Align::Center), |ui| {
+            placeholder_check(ui, shape);
+            ui.add(
+                TextEdit::singleline(&mut draft.title)
+                    .frame(egui::Frame::new())
+                    .margin(vec2(0.0, 0.0))
+                    .align(egui::Align2::LEFT_CENTER)
+                    .min_size(vec2(0.0, size::TASK_ROW))
+                    .font(font(text_size(shape)))
+                    .desired_width(f32::INFINITY),
+            )
+            .accessible_name("Task title");
+        });
+        ui.add_space(space::XS);
+        ui.horizontal(|ui| {
+            ui.add_space(INDENT);
+            if draft.top_level {
+                category_picker(ui, ("rename_category", draft.id), cats, &mut draft.category);
+                let mut own = draft.break_interval.is_some();
+                if ui.checkbox(&mut own, "Own break every").changed() {
+                    draft.break_interval = own.then_some(Settings::default().break_interval_min);
+                }
+                if let Some(minutes) = draft.break_interval.as_mut() {
+                    ui.add(DragValue::new(minutes).range(1..=180).suffix(" min"))
+                        .accessible_name("Break every (min)");
+                }
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if pill(ui, "Save", p.accent, Color32::WHITE).clicked() {
+                    *action = Some(Action::Rename);
+                }
+                if text_button(ui, "Cancel", false).clicked() {
+                    *action = Some(Action::Close);
+                }
+            });
+        });
+    });
+    ui.add_space(space::SM);
 }
 
 /// `42:13`, or `1:02:05` past an hour.
@@ -501,7 +661,8 @@ fn save_edit(tasks: &dyn TaskRepo, draft: &EditDraft) -> RepoResult<()> {
     Ok(())
 }
 
-/// A quiet category drop-down showing the selected category's colour.
+/// A category drop-down that looks like a Things tag: a small muted
+/// capsule that fits its text.
 fn category_picker(
     ui: &mut Ui,
     id_salt: impl egui::AsIdSalt,
@@ -509,20 +670,20 @@ fn category_picker(
     selected: &mut Option<Id>,
 ) {
     let current = cats.iter().find(|c| Some(c.meta.id) == *selected);
-    let text = current.map_or_else(
-        || RichText::new("-"),
-        |c| RichText::new(&c.name).color(color32(c.color)),
-    );
-    ComboBox::from_id_salt(id_salt)
-        .selected_text(text)
-        .width(size::PICKER)
-        .show_ui(ui, |ui| {
-            for c in cats {
-                ui.selectable_value(selected, Some(c.meta.id), &c.name);
-            }
-        })
-        .response
-        .accessible_name("Category");
+    let name = current.map_or("-", |c| c.name.as_str());
+    ui.scope(|ui| {
+        tag_style(ui);
+        ComboBox::from_id_salt(id_salt)
+            .selected_text(name)
+            .width(0.0)
+            .show_ui(ui, |ui| {
+                for c in cats {
+                    ui.selectable_value(selected, Some(c.meta.id), &c.name);
+                }
+            })
+            .response
+            .accessible_name("Category");
+    });
 }
 
 /// Today's time on a task plus everything below it.

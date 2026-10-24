@@ -55,5 +55,5 @@ pub use session::{
 };
 pub use settings::{Settings, SettingsError};
 pub use target::{Period, Target, period_range, target_progress};
-pub use task::{Placement, Task, TaskTree, today_view};
+pub use task::{Placement, Task, TaskTree, display_order, shows_tag, today_view};
 pub use updates::{AvailableUpdate, UpdateError, Updater};

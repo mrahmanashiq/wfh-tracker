@@ -3,7 +3,7 @@
 use jiff::Timestamp;
 use jiff::civil::{Date, date};
 use jiff::tz::TimeZone;
-use wt_core::{Id, Meta, Task, TaskTree, today_view};
+use wt_core::{Id, Meta, Task, TaskTree, display_order, shows_tag, today_view};
 
 fn dhaka() -> TimeZone {
     TimeZone::get("Asia/Dhaka").unwrap()
@@ -142,4 +142,79 @@ fn a_third_level_shows_under_its_sub_task_and_keeps_the_chain_visible() {
     assert_eq!(v[0].children[0].task.title, "API");
     assert_eq!(v[0].children[0].children[0].task.title, "Auth header");
     assert_eq!(v[0].children[0].progress, Some((0, 1)));
+}
+
+#[test]
+fn display_order_sinks_done_tasks_below_open_ones_at_every_level() {
+    let day = date(2026, 10, 21);
+    let done = Some("2026-10-21T05:00:00Z");
+    let parent = task("Checkout", None, None);
+    let validation = task("Validation", Some(&parent), done);
+    let api = task("API", Some(&parent), None);
+    let emails = task("Emails", Some(&parent), done);
+    let docs = task("Docs", Some(&parent), None);
+    let header = task("Header", Some(&api), done);
+    let retry = task("Retry", Some(&api), None);
+    let tasks = [parent, validation, api, emails, docs, header, retry];
+
+    let ordered = display_order(view(&tasks, day));
+
+    assert_eq!(
+        titles(&ordered),
+        [(
+            "Checkout".to_owned(),
+            vec![
+                "API".to_owned(),
+                "Docs".to_owned(),
+                "Validation".to_owned(),
+                "Emails".to_owned(),
+            ]
+        )]
+    );
+    let api = &ordered[0].children[0];
+    let checklist: Vec<_> = api.children.iter().map(|c| c.task.title.as_str()).collect();
+    assert_eq!(checklist, ["Retry", "Header"]);
+}
+
+#[test]
+fn display_order_puts_loose_to_dos_before_projects_and_done_ones_last() {
+    let day = date(2026, 10, 21);
+    let project = task("Project", None, None);
+    let step = task("Step", Some(&project), None);
+    let finished = task("Finished", None, Some("2026-10-21T05:00:00Z"));
+    let loose = task("Loose", None, None);
+    let tasks = [project, step, finished, loose];
+
+    let order: Vec<_> = display_order(view(&tasks, day))
+        .into_iter()
+        .map(|t| t.task.title)
+        .collect();
+
+    assert_eq!(order, ["Loose", "Finished", "Project"]);
+}
+
+#[test]
+fn display_order_does_not_change_the_tasks() {
+    let day = date(2026, 10, 21);
+    let a = task("A", None, Some("2026-10-21T05:00:00Z"));
+    let b = task("B", None, None);
+    let tasks = [a, b];
+    let before = view(&tasks, day);
+
+    let mut after = display_order(before.clone());
+    after.sort_by_key(|t| t.task.meta.id);
+
+    assert_eq!(after, before);
+}
+
+#[test]
+fn a_tag_shows_on_top_level_rows_and_only_below_when_the_category_differs() {
+    let parent = task("Checkout", None, None);
+    let mut same = task("API", Some(&parent), None);
+    same.category_id = parent.category_id;
+    let other = task("Read the RFC", Some(&parent), None);
+
+    assert!(shows_tag(&parent, None));
+    assert!(!shows_tag(&same, Some(&parent)));
+    assert!(shows_tag(&other, Some(&parent)));
 }
