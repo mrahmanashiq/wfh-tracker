@@ -23,6 +23,23 @@ use crate::theme::{
 const DAY_NAMES: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 /// `Mon`
+/// Shows the hand cursor over anything clickable, unless the widget under the
+/// pointer already chose its own cursor (a text field's I-beam, say). Called
+/// once at the end of the frame so painted widgets need no per-widget code.
+pub fn pointing_hand(ctx: &egui::Context) {
+    let Some(pointer) = ctx.pointer_hover_pos() else {
+        return;
+    };
+    let clickable = ctx.viewport(|v| {
+        v.hits.click.is_some_and(|w| {
+            w.enabled && w.sense.senses_click() && w.interact_rect.contains(pointer)
+        })
+    });
+    if clickable && ctx.output(|o| o.cursor_icon) == egui::CursorIcon::Default {
+        ctx.set_cursor_icon(egui::CursorIcon::PointingHand);
+    }
+}
+
 pub fn day_name(day: Weekday) -> &'static str {
     DAY_NAMES[day.to_sunday_zero_offset() as usize]
 }
@@ -1033,4 +1050,46 @@ pub fn office_meter(
     );
     paint_bar(painter, bar, share, color, p.hover);
     response
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)] // test code may unwrap (SPEC: Code Style)
+
+    use egui::{CursorIcon, Sense, vec2};
+    use egui_kittest::Harness;
+
+    use super::pointing_hand;
+
+    /// Cursor egui asks for with the pointer at `at`, over a painted clickable
+    /// square, a disabled one, a hover-only one and a text field, stacked 40pt
+    /// apart below the harness's 8pt margin.
+    fn cursor_at(at: egui::Pos2) -> CursorIcon {
+        let mut text = String::new();
+        let mut h = Harness::new_ui(|ui| {
+            ui.allocate_exact_size(vec2(40.0, 40.0), Sense::click());
+            ui.add_enabled_ui(false, |ui| {
+                ui.allocate_exact_size(vec2(40.0, 40.0), Sense::click());
+            });
+            ui.allocate_exact_size(vec2(40.0, 40.0), Sense::hover());
+            let name = ui.label("Name").id;
+            ui.text_edit_singleline(&mut text).labelled_by(name);
+            pointing_hand(ui.ctx());
+        });
+        h.hover_at(at);
+        h.run_steps(3);
+        h.output().platform_output.cursor_icon
+    }
+
+    #[test]
+    fn hand_shows_over_enabled_clickable_widgets_only() {
+        assert_eq!(cursor_at(egui::pos2(20.0, 28.0)), CursorIcon::PointingHand);
+        assert_eq!(cursor_at(egui::pos2(20.0, 72.0)), CursorIcon::Default);
+        assert_eq!(cursor_at(egui::pos2(20.0, 116.0)), CursorIcon::Default);
+    }
+
+    #[test]
+    fn text_field_keeps_its_own_cursor() {
+        assert_eq!(cursor_at(egui::pos2(20.0, 165.0)), CursorIcon::Text);
+    }
 }

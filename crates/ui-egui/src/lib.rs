@@ -365,6 +365,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
                     self.updates.settings_ui(ui);
                 }
             });
+        widgets::pointing_hand(ui.ctx());
     }
 }
 
