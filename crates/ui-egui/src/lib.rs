@@ -37,7 +37,7 @@ pub use nudges::Nudges;
 pub use planning_screen::PlanningScreen;
 pub use reports_screen::ReportsScreen;
 pub use settings_screen::SettingsScreen;
-pub use status_bar::StatusBar;
+pub use status_bar::{OfficeTone, StatusBar, office_tone};
 pub use tasks_screen::TasksScreen;
 pub use theme::UiFonts;
 pub use updates::UpdateController;

@@ -3,11 +3,13 @@
 //! Sizes, gaps and colours come from [`crate::theme`].
 
 use std::f32::consts::TAU;
+use std::sync::Arc;
 
+use egui::text::{LayoutJob, TextWrapping};
 use egui::{
-    Align, Align2, Button, Color32, CornerRadius, Frame, Id, InnerResponse, Label, Layout, Margin,
-    Painter, Pos2, Rect, Response, RichText, Role, Sense, Shape, Stroke, StrokeKind, Ui, UiBuilder,
-    WidgetInfo, pos2, vec2,
+    Align, Align2, Button, Color32, CornerRadius, FontId, Frame, Galley, Id, InnerResponse, Label,
+    Layout, Margin, Painter, Pos2, Rect, Response, RichText, Role, Sense, Shape, Stroke,
+    StrokeKind, Ui, UiBuilder, WidgetInfo, pos2, vec2,
 };
 use jiff::SignedDuration;
 use jiff::civil::Weekday;
@@ -258,7 +260,6 @@ pub fn timer_capsule(ui: &mut Ui, time: &str) -> Response {
 #[derive(Clone, Copy)]
 pub enum Icon {
     Play,
-    Stop,
     Star,
     Tag,
     Gear,
@@ -271,6 +272,10 @@ pub enum Icon {
     Target,
     Focus,
     Chart,
+    /// A cup with steam: a break.
+    Cup,
+    /// Two people: a meeting.
+    People,
 }
 
 impl Icon {
@@ -284,10 +289,6 @@ impl Icon {
                     c + vec2(-3.5, 5.0),
                 ];
                 painter.add(Shape::convex_polygon(pts, color, Stroke::NONE));
-            }
-            Icon::Stop => {
-                let r = Rect::from_center_size(c, vec2(9.0, 9.0));
-                painter.rect_filled(r, CornerRadius::same(2), color);
             }
             Icon::Star => star(painter, c, 7.5, color),
             Icon::Tag => {
@@ -368,6 +369,50 @@ impl Icon {
                         Rect::from_min_max(c + vec2(dx - 1.6, 6.0 - h), c + vec2(dx + 1.6, 6.0));
                     painter.rect_filled(bar, CornerRadius::same(1), color);
                 }
+            }
+            Icon::Cup => {
+                let s = Stroke::new(1.4, color);
+                let body = Rect::from_min_max(c + vec2(-5.5, -2.0), c + vec2(2.5, 5.5));
+                painter.rect_stroke(
+                    body,
+                    CornerRadius {
+                        nw: 1,
+                        ne: 1,
+                        sw: 3,
+                        se: 3,
+                    },
+                    s,
+                    StrokeKind::Middle,
+                );
+                // The handle: the right half of a small ring.
+                let handle: Vec<Pos2> = (0..=8)
+                    .map(|i| {
+                        let a = -TAU / 4.0 + TAU / 2.0 * i as f32 / 8.0;
+                        c + vec2(2.5 + 2.2 * a.cos(), 1.2 + 2.0 * a.sin())
+                    })
+                    .collect();
+                painter.add(Shape::line(handle, s));
+                for dx in [-3.5, -0.5] {
+                    painter.line_segment([c + vec2(dx, -4.0), c + vec2(dx, -6.5)], s);
+                }
+            }
+            Icon::People => {
+                let s = Stroke::new(1.4, color);
+                // Shoulders: an arc of an ellipse under each head, between
+                // two angles (the top half runs from half a turn to a full one).
+                let shoulders = |x: f32, rx: f32, from: f32| -> Vec<Pos2> {
+                    (0..=10)
+                        .map(|i| {
+                            let a = from + (TAU - from) * i as f32 / 10.0;
+                            c + vec2(x + rx * a.cos(), 6.0 + 4.5 * a.sin())
+                        })
+                        .collect()
+                };
+                // The one behind, to the right, shows only its outer quarter.
+                painter.circle_stroke(c + vec2(3.6, -2.2), 1.9, s);
+                painter.add(Shape::line(shoulders(3.6, 3.2, TAU * 0.75), s));
+                painter.circle_stroke(c + vec2(-2.0, -2.6), 2.3, s);
+                painter.add(Shape::line(shoulders(-2.0, 4.2, TAU / 2.0), s));
             }
             Icon::Plus => {
                 let s = Stroke::new(1.8, color);
@@ -695,4 +740,272 @@ pub fn delete_buttons(ui: &mut Ui, armed: bool) -> Option<DeleteClick> {
     } else {
         None
     }
+}
+
+// ---- The header strip -------------------------------------------------------
+
+/// One line of `text`, cut short with "…" past `max_width`.
+fn elided(ui: &Ui, text: &str, font: FontId, color: Color32, max_width: f32) -> Arc<Galley> {
+    let mut job = LayoutJob::simple_singleline(text.to_owned(), font, color);
+    job.wrap = TextWrapping::truncate_at_width(max_width.max(1.0));
+    ui.painter().layout_job(job)
+}
+
+/// The widest digit's advance: every digit of a running time sits in a slot
+/// this wide, so the time doesn't jitter as it counts.
+fn digit_slot(ui: &Ui, font: &FontId) -> f32 {
+    ui.ctx().fonts_mut(|f| {
+        ('0'..='9')
+            .map(|d| f.glyph_width(font, d))
+            .fold(0.0, f32::max)
+    })
+}
+
+/// How wide [`hero_time`] lays `time` out.
+pub fn hero_time_width(ui: &Ui, time: &str) -> f32 {
+    let face = font(text::HERO);
+    let slot = digit_slot(ui, &face);
+    ui.ctx().fonts_mut(|f| {
+        time.chars()
+            .map(|c| {
+                if c.is_ascii_digit() {
+                    slot
+                } else {
+                    f.glyph_width(&face, c)
+                }
+            })
+            .sum()
+    })
+}
+
+/// The running timer's elapsed time, large, in the regular UI font. Digits sit in
+/// equal slots (centred in each), so the width never changes as it counts.
+/// Its accessible name is `time`.
+pub fn hero_time(ui: &mut Ui, time: &str, color: Color32) -> Response {
+    let face = font(text::HERO);
+    let slot = digit_slot(ui, &face);
+    let width = hero_time_width(ui, time);
+    let height = ui.ctx().fonts_mut(|f| f.row_height(&face));
+    let (rect, response) = ui.allocate_exact_size(vec2(width, height), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, time));
+    let painter = ui.painter();
+    let mut x = rect.left();
+    for c in time.chars() {
+        let galley = painter.layout_no_wrap(c.to_string(), face.clone(), color);
+        let advance = if c.is_ascii_digit() {
+            slot
+        } else {
+            galley.size().x
+        };
+        let left = x + (advance - galley.size().x) / 2.0;
+        painter.galley(pos2(left, rect.top()), galley, color);
+        x += advance;
+    }
+    response
+}
+
+/// The width [`running_title`] wants for `title` over `subtitle`.
+pub fn running_title_width(ui: &Ui, title: &str, subtitle: Option<&str>) -> f32 {
+    let painter = ui.painter();
+    let title = painter
+        .layout_no_wrap(title.to_owned(), bold(ui, text::BODY), Color32::WHITE)
+        .size()
+        .x;
+    let subtitle = subtitle.map_or(0.0, |s| {
+        painter
+            .layout_no_wrap(s.to_owned(), font(text::SMALL), Color32::WHITE)
+            .size()
+            .x
+    });
+    size::ICON + space::SM + title.max(subtitle)
+}
+
+/// What's running: a dot in its colour, the title in semibold and, under
+/// it, an optional quiet line (the parent project, what comes next). Both
+/// lines are cut short with "…" to fit `max_width`. Its accessible name is
+/// `title`. With no `dot` it is the idle state: an empty ring and a quiet
+/// regular-weight title.
+pub fn running_title(
+    ui: &mut Ui,
+    dot: Option<Color32>,
+    title: &str,
+    subtitle: Option<&str>,
+    max_width: f32,
+) -> Response {
+    let p = palette(ui);
+    let width = running_title_width(ui, title, subtitle).min(max_width);
+    let (rect, response) = ui.allocate_exact_size(vec2(width, size::HEADER), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, title));
+    let text_left = rect.left() + size::ICON + space::SM;
+    let text_width = rect.right() - text_left;
+    let (title_font, title_color) = match dot {
+        Some(_) => (bold(ui, text::BODY), p.text),
+        None => (font(text::BODY), p.muted),
+    };
+    let title = elided(ui, title, title_font, title_color, text_width);
+    let subtitle = subtitle.map(|s| elided(ui, s, font(text::SMALL), p.secondary, text_width));
+    let title_height = title.size().y;
+    let height = title_height + subtitle.as_ref().map_or(0.0, |s| s.size().y);
+    let top = rect.center().y - height / 2.0;
+    let painter = ui.painter();
+    let dot_center = pos2(
+        rect.left() + size::ICON / 2.0,
+        top + title_height / 2.0 + 0.5,
+    );
+    let r = size::HEADER_DOT / 2.0;
+    match dot {
+        Some(color) => {
+            painter.circle_filled(dot_center, r, color);
+        }
+        None => {
+            painter.circle_stroke(
+                dot_center,
+                r - stroke::CHECK / 2.0,
+                Stroke::new(stroke::CHECK, p.check),
+            );
+        }
+    }
+    painter.galley(pos2(text_left, top), title, title_color);
+    if let Some(subtitle) = subtitle {
+        painter.galley(pos2(text_left, top + title_height), subtitle, p.secondary);
+    }
+    response
+}
+
+/// A round Stop button: a soft accent circle with a square in it. On hover
+/// the circle fills with the accent and the square turns white.
+pub fn stop_button(ui: &mut Ui) -> Response {
+    let p = palette(ui);
+    let side = size::STOP_BUTTON;
+    let (rect, response) = ui.allocate_exact_size(vec2(side, side), Sense::click());
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, "Stop"));
+    let t = fade(ui, response.id, response.hovered());
+    let painter = ui.painter();
+    painter.circle_filled(
+        rect.center(),
+        side / 2.0,
+        p.accent_soft.lerp_to_gamma(p.accent, t),
+    );
+    let glyph = size::STOP_GLYPH;
+    painter.rect_filled(
+        Rect::from_center_size(rect.center(), vec2(glyph, glyph)),
+        CornerRadius::same(radius::STOP),
+        p.accent.lerp_to_gamma(Color32::WHITE, t),
+    );
+    response.on_hover_text("Stop")
+}
+
+/// How a [`header_button`] looks at rest.
+#[derive(Clone, Copy)]
+pub enum HeaderLook {
+    /// No fill until hovered; quiet text.
+    Ghost,
+    /// A tinted capsule for an active state or the main action: `fill`
+    /// behind, `color` for the icon and text.
+    Tinted { fill: Color32, color: Color32 },
+}
+
+/// A header control: a painted icon and a label in a capsule. `compact`
+/// drops the label (it shows as a tooltip instead). The label is cut short
+/// past `max_label`; `name` is the accessible name, kept whole.
+pub fn header_button(
+    ui: &mut Ui,
+    icon: Icon,
+    label: &str,
+    name: &str,
+    look: HeaderLook,
+    compact: bool,
+    max_label: f32,
+) -> Response {
+    let p = palette(ui);
+    let color = match look {
+        HeaderLook::Ghost => p.muted,
+        HeaderLook::Tinted { color, .. } => color,
+    };
+    let galley = (!compact).then(|| elided(ui, label, font(text::BODY), color, max_label));
+    let icon_gap = space::SM - 2.0;
+    let width = match &galley {
+        Some(g) => space::SM + size::ICON + icon_gap + g.size().x + space::MD,
+        None => size::HEADER_BUTTON,
+    };
+    let (rect, response) = ui.allocate_exact_size(vec2(width, size::HEADER_BUTTON), Sense::click());
+    response.widget_info(|| WidgetInfo::labeled(Role::Button, true, name));
+    let t = fade(ui, response.id, response.hovered());
+    let painter = ui.painter();
+    let (icon_color, text_color) = match look {
+        HeaderLook::Ghost => {
+            faded_fill(painter, rect, radius::HEADER_BUTTON, p.hover, t);
+            (
+                p.secondary.lerp_to_gamma(p.text, t),
+                p.muted.lerp_to_gamma(p.text, t),
+            )
+        }
+        HeaderLook::Tinted { fill, color } => {
+            painter.rect_filled(
+                rect,
+                CornerRadius::same(radius::HEADER_BUTTON),
+                fill.lerp_to_gamma(color, 0.12 * t),
+            );
+            (color, color)
+        }
+    };
+    let y = rect.center().y;
+    let icon_center = match &galley {
+        Some(_) => pos2(rect.left() + space::SM + size::ICON / 2.0, y),
+        None => rect.center(),
+    };
+    icon.paint(
+        painter,
+        Rect::from_center_size(icon_center, vec2(size::ICON, size::ICON)),
+        icon_color,
+    );
+    match galley {
+        Some(galley) => {
+            let x = icon_center.x + size::ICON / 2.0 + icon_gap;
+            painter.galley(pos2(x, y - galley.size().y / 2.0), galley, text_color);
+            response
+        }
+        None => response.on_hover_text(name),
+    }
+}
+
+/// Today's office time: a short line (`lead` quiet, `worked` firm, `rest`
+/// quiet) over a slim rounded bar filled to `share` in `color`. Its
+/// accessible name is `name`.
+pub fn office_meter(
+    ui: &mut Ui,
+    [lead, worked, rest]: [&str; 3],
+    share: f32,
+    color: Color32,
+    name: &str,
+) -> Response {
+    let p = palette(ui);
+    let colors = [p.secondary, p.text, p.secondary];
+    let fonts = [font(text::SMALL), bold(ui, text::SMALL), font(text::SMALL)];
+    let parts: Vec<Arc<Galley>> = [lead, worked, rest]
+        .into_iter()
+        .zip(fonts)
+        .zip(colors)
+        .map(|((s, f), c)| ui.painter().layout_no_wrap(s.to_owned(), f, c))
+        .collect();
+    let line_width: f32 = parts.iter().map(|g| g.size().x).sum();
+    let line_height = parts.iter().map(|g| g.size().y).fold(0.0, f32::max);
+    let width = line_width.max(size::METER_MIN);
+    let (rect, response) = ui.allocate_exact_size(vec2(width, size::HEADER), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(Role::Label, true, name));
+    let gap = space::XS + 1.0;
+    let top = rect.center().y - (line_height + gap + size::METER_BAR) / 2.0;
+    let painter = ui.painter();
+    let mut x = rect.left();
+    for (galley, c) in parts.into_iter().zip(colors) {
+        let w = galley.size().x;
+        painter.galley(pos2(x, top), galley, c);
+        x += w;
+    }
+    let bar = Rect::from_min_size(
+        pos2(rect.left(), top + line_height + gap),
+        vec2(width, size::METER_BAR),
+    );
+    paint_bar(painter, bar, share, color, p.hover);
+    response
 }

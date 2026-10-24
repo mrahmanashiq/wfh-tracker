@@ -12,6 +12,7 @@ use wt_core::{
 };
 use wt_storage::SqliteStore;
 use wt_ui_egui::StatusBar;
+use wt_ui_egui::{OfficeTone, office_tone};
 
 #[derive(Default)]
 struct FakeNotifier(RefCell<Vec<String>>);
@@ -156,7 +157,7 @@ fn stop_ends_the_timer() {
     h.run();
 
     assert_eq!(h.state().running_kind(), None);
-    h.get_by_label("No timer running");
+    h.get_by_label("Nothing running");
 }
 
 #[test]
@@ -231,4 +232,30 @@ fn the_running_timer_shows_the_tasks_total_for_today_not_just_this_stretch() {
     h.run();
 
     h.get_by_label("00:35:00");
+}
+
+#[test]
+fn the_office_meter_colours_follow_the_target_and_ceiling() {
+    let settings = Settings::default(); // 8h target, 9h ceiling
+    let thursday = jiff::civil::Weekday::Thursday;
+    let tone = |minutes| office_tone(SignedDuration::from_mins(minutes), &settings, thursday);
+
+    assert_eq!(tone(0), OfficeTone::Under);
+    assert_eq!(tone(8 * 60 - 1), OfficeTone::Under);
+    assert_eq!(tone(8 * 60), OfficeTone::Met);
+    assert_eq!(tone(8 * 60 + 29), OfficeTone::Met);
+    assert_eq!(tone(8 * 60 + 30), OfficeTone::NearCeiling);
+    assert_eq!(tone(9 * 60 - 1), OfficeTone::NearCeiling);
+    assert_eq!(tone(9 * 60), OfficeTone::Over);
+    assert_eq!(tone(9 * 60 + 30), OfficeTone::Over);
+}
+
+#[test]
+fn on_a_day_off_any_office_time_is_a_warning() {
+    let settings = Settings::default();
+    let friday = jiff::civil::Weekday::Friday;
+    let tone = |minutes| office_tone(SignedDuration::from_mins(minutes), &settings, friday);
+
+    assert_eq!(tone(0), OfficeTone::Under);
+    assert_eq!(tone(10), OfficeTone::DayOff);
 }

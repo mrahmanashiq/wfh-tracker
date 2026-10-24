@@ -1,4 +1,4 @@
-use egui::{Color32, CornerRadius, RichText, Sense, Ui, vec2};
+use egui::{Align, Color32, Layout, Rect, RichText, Sense, Ui, UiBuilder, pos2, vec2};
 use jiff::{SignedDuration, Timestamp};
 use wt_core::clock_text as time_of_day;
 use wt_core::repo::RepoResult;
@@ -8,13 +8,17 @@ use wt_core::{
     target_text, tracked_time,
 };
 
-use crate::theme::{palette, radius, size, space};
+use crate::theme::{Palette, palette, size, space};
 use crate::widgets::{
-    Icon, color32, icon_button, message, pill, progress_bar, section_label, sidebar_row,
+    HeaderLook, Icon, color32, header_button, hero_time, hero_time_width, message, office_meter,
+    running_title, section_label, sidebar_row, stop_button,
 };
 
-/// The office-time bar in the header.
-const OFFICE_BAR_WIDTH: f32 = 150.0;
+/// The quiet line under "Nothing running".
+const IDLE_HINT: &str = "Start a to-do, or pick one under Track time";
+
+/// Office time this close to the soft ceiling shows as a warning.
+const CEILING_NEAR: SignedDuration = SignedDuration::from_mins(30);
 
 /// A timer left running is stopped once the app has been gone this long.
 const RECOVERY_GAP: SignedDuration = SignedDuration::from_mins(3);
@@ -67,103 +71,169 @@ impl StatusBar {
 
         let p = palette(ui);
         let mut action = None;
-        ui.horizontal(|ui| {
-            ui.set_min_height(size::ROW);
-            match &running {
-                Some(session) => {
-                    let color = timer_color(store, session, p.accent);
-                    egui::Frame::new()
-                        .fill(p.accent_soft)
-                        .corner_radius(CornerRadius::same(radius::PILL + 2))
-                        .inner_margin(egui::Margin::symmetric(space::MD as i8, 3))
-                        .show(ui, |ui| {
-                            let (dot, _) = ui.allocate_exact_size(vec2(10.0, 10.0), Sense::hover());
-                            ui.painter().circle_filled(dot.center(), 4.0, color);
-                            ui.label(
-                                RichText::new(session_label(store, session))
-                                    .color(p.text)
-                                    .strong(),
-                            );
-                            ui.label(
-                                RichText::new(clock_text(tracked_time(
-                                    &sessions,
-                                    TimerTarget::resuming(session),
-                                    clock.today(),
-                                    &clock.time_zone(),
-                                    now,
-                                )))
-                                .color(p.accent)
-                                .monospace(),
-                            );
-                            if icon_button(ui, Icon::Stop, "Stop", p.accent).clicked() {
-                                action = Some(Action::Stop);
-                            }
-                        });
-                }
-                None => {
-                    ui.label(RichText::new("No timer running").color(p.secondary));
-                }
-            }
+        let today = clock.today();
+        let tz = clock.time_zone();
+        let in_meeting = running.as_ref().is_some_and(Session::is_meeting);
+        let on_break = running.as_ref().is_some_and(Session::is_break);
+        let compact = ui.available_width() < size::HEADER_COMPACT;
+        let (strip, _) =
+            ui.allocate_exact_size(vec2(ui.available_width(), size::HEADER), Sense::hover());
 
-            ui.add_space(space::MD);
-            if let Some(block) = active_block(blocks, now, &clock.time_zone()) {
-                ui.label(
-                    RichText::new(format!(
-                        "{} block · until {}",
-                        block_name(store, block),
-                        time_of_day(block.end_min)
-                    ))
-                    .small()
-                    .color(p.accent),
-                );
-                ui.add_space(space::SM);
+        // Right to left: Meeting, then Take break or Resume, then the office
+        // meter. Whatever width they take, the running block gets the rest.
+        let mut right = ui.new_child(
+            UiBuilder::new()
+                .max_rect(strip)
+                .layout(Layout::right_to_left(Align::Center)),
+        );
+        right.spacing_mut().item_spacing.x = space::XS;
+        let meeting = if in_meeting {
+            let look = HeaderLook::Tinted {
+                fill: p.danger_soft,
+                color: p.danger,
+            };
+            header_button(
+                &mut right,
+                Icon::People,
+                "End meeting",
+                "End meeting",
+                look,
+                compact,
+                f32::INFINITY,
+            )
+        } else {
+            header_button(
+                &mut right,
+                Icon::People,
+                "Meeting",
+                "Meeting",
+                HeaderLook::Ghost,
+                compact,
+                f32::INFINITY,
+            )
+        };
+        if meeting.clicked() {
+            action = Some(Action::ToggleMeeting);
+        }
+        if running.is_some()
+            && !on_break
+            && !in_meeting
+            && header_button(
+                &mut right,
+                Icon::Cup,
+                "Take break",
+                "Take break",
+                HeaderLook::Ghost,
+                compact,
+                f32::INFINITY,
+            )
+            .clicked()
+        {
+            action = Some(Action::TakeBreak);
+        }
+        if let Some((_, label)) = &self.resume
+            && (running.is_none() || on_break)
+        {
+            let name = format!("Resume {label}");
+            let look = HeaderLook::Tinted {
+                fill: p.accent_soft,
+                color: p.accent,
+            };
+            if header_button(
+                &mut right,
+                Icon::Play,
+                &name,
+                &name,
+                look,
+                compact,
+                size::RESUME_LABEL,
+            )
+            .clicked()
+            {
+                action = Some(Action::Resume);
             }
-            let today = clock.today();
-            let office = office_time(&sessions, today, &clock.time_zone(), now);
-            let status = office_status(office, settings, today.weekday());
-            // Fixed width, so the pills on the right never cover it.
-            ui.allocate_ui(vec2(OFFICE_BAR_WIDTH + space::XL * 2.0, size::ROW), |ui| {
-                ui.spacing_mut().item_spacing.y = space::XS;
-                ui.label(
-                    RichText::new(office_text(office, settings, today.weekday()))
-                        .small()
-                        .color(p.secondary),
-                );
-                let over = matches!(status, OfficeStatus::Overtime { .. });
-                office_bar(
-                    ui,
-                    office,
-                    settings.office_target_min,
-                    if over { p.danger } else { p.accent },
-                );
-            });
+        }
+        right.add_space(space::XL - space::XS);
+        let office = office_time(&sessions, today, &tz, now);
+        let (parts, share) = office_parts(office, settings, today.weekday(), compact);
+        let tone = office_tone(office, settings, today.weekday());
+        office_meter(
+            &mut right,
+            [&parts[0], &parts[1], &parts[2]],
+            share,
+            tone_color(tone, &p),
+            &office_text(office, settings, today.weekday()),
+        );
+        let taken = right.min_rect().width();
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let in_meeting = running.as_ref().is_some_and(Session::is_meeting);
-                let on_break = running.as_ref().is_some_and(Session::is_break);
-                let (label, fill, color) = if in_meeting {
-                    ("End meeting", p.danger, Color32::WHITE)
-                } else {
-                    ("Meeting", p.hover, p.text)
-                };
-                if pill(ui, label, fill, color).clicked() {
-                    action = Some(Action::ToggleMeeting);
-                }
-                if running.is_some()
-                    && !on_break
-                    && !in_meeting
-                    && pill(ui, "Take break", p.hover, p.text).clicked()
-                {
-                    action = Some(Action::TakeBreak);
-                }
-                if let Some((_, label)) = &self.resume
-                    && (running.is_none() || on_break)
-                    && pill(ui, &format!("Resume {label}"), p.accent, Color32::WHITE).clicked()
-                {
-                    action = Some(Action::Resume);
-                }
-            });
+        let left_rect = Rect::from_min_max(
+            strip.min,
+            pos2(strip.right() - taken - space::XL, strip.bottom()),
+        );
+        let mut left = ui.new_child(
+            UiBuilder::new()
+                .max_rect(left_rect)
+                .layout(Layout::left_to_right(Align::Center)),
+        );
+        left.spacing_mut().item_spacing.x = space::SM;
+        let block = active_block(blocks, now, &tz).map(|b| {
+            format!(
+                "{} block until {}",
+                block_name(store, b),
+                time_of_day(b.end_min)
+            )
         });
+        match &running {
+            Some(session) => {
+                let (title, parent) = session_title(store, session);
+                let next = in_meeting
+                    .then(|| {
+                        self.resume
+                            .as_ref()
+                            .map(|(_, label)| format!("Then back to {label}"))
+                    })
+                    .flatten();
+                let subtitle = [parent, next, block]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .join(" · ");
+                let time = clock_text(tracked_time(
+                    &sessions,
+                    TimerTarget::resuming(session),
+                    today,
+                    &tz,
+                    now,
+                ));
+                let room = left_rect.width()
+                    - hero_time_width(&left, &time)
+                    - size::STOP_BUTTON
+                    - space::MD
+                    - space::SM;
+                running_title(
+                    &mut left,
+                    Some(timer_color(store, session, p.accent)),
+                    &title,
+                    (!subtitle.is_empty()).then_some(subtitle.as_str()),
+                    room,
+                );
+                left.add_space(space::MD - space::SM);
+                hero_time(&mut left, &time, p.text);
+                if stop_button(&mut left).clicked() {
+                    action = Some(Action::Stop);
+                }
+            }
+            None => {
+                let hint = block.unwrap_or_else(|| IDLE_HINT.to_owned());
+                running_title(
+                    &mut left,
+                    None,
+                    "Nothing running",
+                    Some(&hint),
+                    left_rect.width(),
+                );
+            }
+        }
 
         if let Some(banner) = &self.banner {
             ui.horizontal(|ui| {
@@ -310,6 +380,17 @@ impl StatusBar {
     }
 }
 
+/// The title and, for a sub-task, its parent's title.
+fn session_title(store: &dyn SessionRepo, session: &Session) -> (String, Option<String>) {
+    let parent = session
+        .task_id
+        .and_then(|id| store.get(id).ok())
+        .and_then(|task| task.parent_id)
+        .and_then(|id| store.get(id).ok())
+        .map(|parent| parent.title);
+    (session_label(store, session), parent)
+}
+
 /// The task title, or the category name for a task-less session.
 fn session_label(store: &dyn SessionRepo, session: &Session) -> String {
     let task = session.task_id.and_then(|id| store.get(id).ok());
@@ -410,10 +491,75 @@ fn notice_text(
     (title.to_owned(), body)
 }
 
-/// A thin bar: office time against the daily target (full when reached).
-fn office_bar(ui: &mut Ui, office: SignedDuration, target_min: u32, color: Color32) {
-    let share = office.as_mins() as f32 / target_min.max(1) as f32;
-    progress_bar(ui, OFFICE_BAR_WIDTH, share, color);
+/// Where today's office time stands, for the header meter's colour.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OfficeTone {
+    /// Short of the target (or nothing yet on a day off).
+    Under,
+    /// The target is met, with room before the soft ceiling.
+    Met,
+    /// Within half an hour of the soft ceiling.
+    NearCeiling,
+    /// At or past the soft ceiling.
+    Over,
+    /// Office time on a day off: all of it is overtime.
+    DayOff,
+}
+
+pub fn office_tone(
+    office: SignedDuration,
+    settings: &Settings,
+    weekday: jiff::civil::Weekday,
+) -> OfficeTone {
+    if !settings.workdays.contains(&weekday) {
+        return if office.is_positive() {
+            OfficeTone::DayOff
+        } else {
+            OfficeTone::Under
+        };
+    }
+    let target = SignedDuration::from_mins(i64::from(settings.office_target_min));
+    let ceiling = SignedDuration::from_mins(i64::from(settings.office_ceiling_min));
+    if office < target {
+        OfficeTone::Under
+    } else if office >= ceiling {
+        OfficeTone::Over
+    } else if office >= ceiling - CEILING_NEAR {
+        OfficeTone::NearCeiling
+    } else {
+        OfficeTone::Met
+    }
+}
+
+fn tone_color(tone: OfficeTone, p: &Palette) -> Color32 {
+    match tone {
+        OfficeTone::Under => p.accent,
+        OfficeTone::Met => p.success,
+        OfficeTone::NearCeiling | OfficeTone::DayOff => p.warning,
+        OfficeTone::Over => p.danger,
+    }
+}
+
+/// The meter's line in three parts (`Office `, `6h 05m`, ` of 8h`) and how
+/// full its bar is. Compact drops the lead.
+fn office_parts(
+    office: SignedDuration,
+    settings: &Settings,
+    weekday: jiff::civil::Weekday,
+    compact: bool,
+) -> ([String; 3], f32) {
+    let lead = if compact { "" } else { "Office " }.to_owned();
+    let worked = hours_text(office);
+    if !settings.workdays.contains(&weekday) {
+        let share = if office.is_positive() { 1.0 } else { 0.0 };
+        return ([lead, worked, " · day off".to_owned()], share);
+    }
+    let rest = match office_status(office, settings, weekday) {
+        OfficeStatus::Overtime { minutes } => format!(" · {minutes}m overtime"),
+        _ => format!(" of {}", target_text(settings.office_target_min)),
+    };
+    let share = office.as_mins() as f32 / settings.office_target_min.max(1) as f32;
+    ([lead, worked, rest], share)
 }
 
 /// The running session's category colour, falling back to `default`.

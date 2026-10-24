@@ -42,6 +42,8 @@ pub mod radius {
     pub const TAG: u8 = 9;
     /// The stop square inside the timer capsule.
     pub const STOP: u8 = 2;
+    /// Header buttons: half their height.
+    pub const HEADER_BUTTON: u8 = 14;
 }
 
 /// Line widths.
@@ -96,6 +98,24 @@ pub mod size {
     pub const VALUE_COLUMN: f32 = 110.0;
     /// The bar column of an aligned row.
     pub const BAR_COLUMN: f32 = 200.0;
+    /// The header strip's content height.
+    pub const HEADER: f32 = 40.0;
+    /// Below this content width the header turns compact: icon-only
+    /// buttons and a shorter office line.
+    pub const HEADER_COMPACT: f32 = 700.0;
+    /// Break, Meeting and Resume in the header.
+    pub const HEADER_BUTTON: f32 = 28.0;
+    /// The running category's dot in the header.
+    pub const HEADER_DOT: f32 = 9.0;
+    /// The round Stop button beside the running time.
+    pub const STOP_BUTTON: f32 = 26.0;
+    /// The square inside it.
+    pub const STOP_GLYPH: f32 = 8.0;
+    /// The office meter's bar: its height and least width.
+    pub const METER_BAR: f32 = 4.0;
+    pub const METER_MIN: f32 = 96.0;
+    /// The task name in a Resume button is cut short past this.
+    pub const RESUME_LABEL: f32 = 150.0;
 }
 
 /// Type scale, in points.
@@ -113,6 +133,8 @@ pub mod text {
     /// Section labels and chart captions.
     pub const CAPTION: f32 = 11.0;
     pub const MONO: f32 = 13.0;
+    /// The running timer's elapsed time in the header.
+    pub const HERO: f32 = 20.0;
 }
 
 /// How long hover and selection fades take, in seconds.
@@ -162,6 +184,10 @@ pub struct Palette {
     /// Open checkbox borders: a little firmer than `line`.
     pub check: Color32,
     pub danger: Color32,
+    /// Behind an active "End meeting".
+    pub danger_soft: Color32,
+    /// Nearing a limit, or office time on a day off.
+    pub warning: Color32,
     /// A met target.
     pub success: Color32,
     pub star: Color32,
@@ -190,6 +216,8 @@ const LIGHT: Palette = Palette {
     muted: Color32::from_rgb(0x55, 0x57, 0x5e),
     check: Color32::from_rgb(0xc2, 0xc3, 0xc9),
     danger: Color32::from_rgb(0xd9, 0x4c, 0x4c),
+    danger_soft: Color32::from_rgb(0xfc, 0xec, 0xec),
+    warning: Color32::from_rgb(0xd9, 0x8a, 0x1c),
     success: Color32::from_rgb(0x2e, 0x9a, 0x5e),
     star: Color32::from_rgb(0xf0, 0xb4, 0x00),
     shadow: Color32::from_black_alpha(14),
@@ -215,6 +243,8 @@ const DARK: Palette = Palette {
     muted: Color32::from_rgb(0xb4, 0xb5, 0xbb),
     check: Color32::from_rgb(0x5c, 0x5d, 0x64),
     danger: Color32::from_rgb(0xf0, 0x6a, 0x6a),
+    danger_soft: Color32::from_rgb(0x3b, 0x25, 0x27),
+    warning: Color32::from_rgb(0xf0, 0xa8, 0x4a),
     success: Color32::from_rgb(0x4c, 0xc3, 0x8a),
     star: Color32::from_rgb(0xf5, 0xc5, 0x42),
     shadow: Color32::from_black_alpha(70),
