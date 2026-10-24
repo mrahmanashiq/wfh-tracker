@@ -158,6 +158,6 @@ fn appearance_name(appearance: Appearance) -> &'static str {
     match appearance {
         Appearance::Light => "Light",
         Appearance::Dark => "Dark",
-        Appearance::System => "Follow Windows",
+        Appearance::System => "System",
     }
 }
