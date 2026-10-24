@@ -176,3 +176,78 @@ fn a_sub_task_can_have_sub_tasks_but_the_third_level_cannot() {
     hover_row(&mut h, "Auth header");
     assert!(h.query_by_label("Add sub-task").is_none());
 }
+
+#[test]
+fn a_done_to_do_sinks_below_the_open_ones_in_its_group() {
+    let mut h = harness();
+    add_task(&mut h, "Checkout");
+    add_subtask(&mut h, "Checkout", "Validation");
+    add_subtask(&mut h, "Checkout", "API");
+    let top = |h: &Harness<'_, State>, title: &str| h.get_by_label(title).rect().top();
+    assert!(top(&h, "Validation") < top(&h, "API"));
+
+    h.get_by_label("Validation").click();
+    h.run();
+
+    assert!(top(&h, "API") < top(&h, "Validation"));
+    // Only the display moves; the stored order is still creation order.
+    let titles: Vec<_> = h
+        .state()
+        .store
+        .list_live()
+        .unwrap()
+        .into_iter()
+        .map(|t| t.title)
+        .collect();
+    assert_eq!(titles, ["Checkout", "Validation", "API"]);
+}
+
+#[test]
+fn the_category_tag_shows_on_the_project_heading_only() {
+    let h = checkout_with_two_subtasks();
+
+    // Sub-tasks share the heading's category, so only the heading tags it.
+    assert_eq!(h.query_all_by_label("Office").count(), 1);
+}
+
+#[test]
+fn the_inline_edit_card_saves_a_new_title() {
+    let mut h = checkout_with_two_subtasks();
+
+    row_icon(&mut h, "Validation", "Edit");
+    h.get_by_label("Task title")
+        .set_text_value_accesskit("Form validation");
+    h.run();
+    h.get_by_label("Save").click();
+    h.run();
+
+    h.get_by_label("Form validation");
+    assert!(h.query_by_label("Task title").is_none());
+    let tasks = h.state().store.list_live().unwrap();
+    assert!(tasks.iter().any(|t| t.title == "Form validation"));
+}
+
+#[test]
+fn the_inline_edit_card_saves_a_new_category_for_a_project() {
+    let mut h = checkout_with_two_subtasks();
+
+    row_icon(&mut h, "Checkout", "Edit");
+    // The card's picker comes after the New To-Do line's.
+    h.query_all_by_label("Category").last().unwrap().click();
+    h.run();
+    h.get_by_label("Learning").click();
+    h.run();
+    h.get_by_label("Save").click();
+    h.run();
+
+    let store = &h.state().store;
+    let learning = store
+        .list()
+        .unwrap()
+        .into_iter()
+        .find(|c| c.name == "Learning")
+        .unwrap();
+    let tasks = store.list_live().unwrap();
+    assert!(tasks.iter().all(|t| t.category_id == learning.meta.id));
+    h.get_by_label("Learning");
+}

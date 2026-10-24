@@ -14,6 +14,8 @@ use egui::{
 
 /// Spacing scale in points: gaps, margins and indents.
 pub mod space {
+    /// Between the rows of a dense list.
+    pub const XXS: f32 = 2.0;
     pub const XS: f32 = 4.0;
     pub const SM: f32 = 8.0;
     pub const MD: f32 = 12.0;
@@ -34,6 +36,22 @@ pub mod radius {
     pub const LG: u8 = 12;
     /// Pills: half the control height.
     pub const PILL: u8 = 15;
+    /// The square to-do checkbox, as in Things.
+    pub const CHECK: u8 = 4;
+    /// Tag capsules: half the tag height.
+    pub const TAG: u8 = 9;
+    /// The stop square inside the timer capsule.
+    pub const STOP: u8 = 2;
+}
+
+/// Line widths.
+pub mod stroke {
+    /// Separators and card borders.
+    pub const HAIRLINE: f32 = 1.0;
+    /// Checkbox borders and the small checklist ring.
+    pub const CHECK: f32 = 1.2;
+    /// The tick inside a checked box.
+    pub const TICK: f32 = 1.8;
 }
 
 /// Fixed sizes of shared elements.
@@ -46,8 +64,22 @@ pub mod size {
     pub const CONTROL: f32 = 30.0;
     pub const ICON_BUTTON: f32 = 28.0;
     pub const ICON: f32 = 16.0;
-    /// The round checkbox.
+    /// The hit area of a checkbox; the column every row's check sits in.
     pub const CHECK: f32 = 20.0;
+    /// The painted square of a to-do checkbox.
+    pub const CHECK_BOX: f32 = 15.0;
+    /// The painted ring of a checklist item.
+    pub const CHECK_SMALL: f32 = 11.0;
+    /// A Things-style task row.
+    pub const TASK_ROW: f32 = 32.0;
+    /// A tag capsule.
+    pub const TAG: f32 = 18.0;
+    /// The category dot inside a tag.
+    pub const TAG_DOT: f32 = 6.0;
+    /// The running timer's capsule.
+    pub const CAPSULE: f32 = 22.0;
+    /// The time column at the right of a task row.
+    pub const TIME_COLUMN: f32 = 64.0;
     /// The icon beside a screen title.
     pub const TITLE_ICON: f32 = 30.0;
     /// The soft circle of an empty state.
@@ -71,7 +103,11 @@ pub mod text {
     pub const TITLE: f32 = 24.0;
     /// Big numbers on dashboard cards.
     pub const VALUE: f32 = 21.0;
-    pub const TASK: f32 = 14.5;
+    pub const TASK: f32 = 15.0;
+    /// Checklist items (third-level tasks).
+    pub const CHECKLIST: f32 = 13.5;
+    /// Tag capsules.
+    pub const TAG: f32 = 11.5;
     pub const BODY: f32 = 14.0;
     pub const SMALL: f32 = 12.0;
     /// Section labels and chart captions.
@@ -99,6 +135,8 @@ pub struct Palette {
     pub sidebar: Color32,
     /// Card surface.
     pub card: Color32,
+    /// A raised card's surface, such as the inline task editor.
+    pub raised: Color32,
     pub text: Color32,
     /// Dates, counts, hints.
     pub secondary: Color32,
@@ -115,18 +153,29 @@ pub struct Palette {
     pub accent: Color32,
     /// Running-timer row and pill background.
     pub accent_soft: Color32,
+    /// The selected task row: Things' soft blue.
+    pub selection: Color32,
+    /// Tag capsule fill.
+    pub tag: Color32,
+    /// Checklist text: between `text` and `secondary`.
+    pub muted: Color32,
+    /// Open checkbox borders: a little firmer than `line`.
+    pub check: Color32,
     pub danger: Color32,
     /// A met target.
     pub success: Color32,
     pub star: Color32,
     /// Under cards.
     pub shadow: Color32,
+    /// Under raised cards such as the inline task editor.
+    pub raised_shadow: Color32,
 }
 
 const LIGHT: Palette = Palette {
     canvas: Color32::from_rgb(0xff, 0xff, 0xff),
     sidebar: Color32::from_rgb(0xf6, 0xf6, 0xf8),
     card: Color32::from_rgb(0xfc, 0xfc, 0xfd),
+    raised: Color32::from_rgb(0xff, 0xff, 0xff),
     text: Color32::from_rgb(0x1f, 0x20, 0x24),
     secondary: Color32::from_rgb(0x86, 0x87, 0x8e),
     line: Color32::from_rgb(0xd6, 0xd7, 0xdc),
@@ -136,16 +185,22 @@ const LIGHT: Palette = Palette {
     control: Color32::from_rgb(0xf1, 0xf1, 0xf4),
     accent: Color32::from_rgb(0x2f, 0x6f, 0xe4),
     accent_soft: Color32::from_rgb(0xea, 0xf1, 0xfd),
+    selection: Color32::from_rgb(0xd9, 0xe6, 0xfb),
+    tag: Color32::from_rgb(0xec, 0xed, 0xf1),
+    muted: Color32::from_rgb(0x55, 0x57, 0x5e),
+    check: Color32::from_rgb(0xc2, 0xc3, 0xc9),
     danger: Color32::from_rgb(0xd9, 0x4c, 0x4c),
     success: Color32::from_rgb(0x2e, 0x9a, 0x5e),
     star: Color32::from_rgb(0xf0, 0xb4, 0x00),
     shadow: Color32::from_black_alpha(14),
+    raised_shadow: Color32::from_black_alpha(34),
 };
 
 const DARK: Palette = Palette {
     canvas: Color32::from_rgb(0x1c, 0x1d, 0x20),
     sidebar: Color32::from_rgb(0x23, 0x24, 0x28),
     card: Color32::from_rgb(0x24, 0x25, 0x29),
+    raised: Color32::from_rgb(0x2a, 0x2b, 0x30),
     text: Color32::from_rgb(0xe8, 0xe8, 0xeb),
     secondary: Color32::from_rgb(0x8f, 0x90, 0x97),
     line: Color32::from_rgb(0x42, 0x43, 0x49),
@@ -155,10 +210,15 @@ const DARK: Palette = Palette {
     control: Color32::from_rgb(0x2b, 0x2c, 0x31),
     accent: Color32::from_rgb(0x5b, 0x9b, 0xff),
     accent_soft: Color32::from_rgb(0x1f, 0x2e, 0x47),
+    selection: Color32::from_rgb(0x26, 0x3a, 0x5c),
+    tag: Color32::from_rgb(0x32, 0x33, 0x39),
+    muted: Color32::from_rgb(0xb4, 0xb5, 0xbb),
+    check: Color32::from_rgb(0x5c, 0x5d, 0x64),
     danger: Color32::from_rgb(0xf0, 0x6a, 0x6a),
     success: Color32::from_rgb(0x4c, 0xc3, 0x8a),
     star: Color32::from_rgb(0xf5, 0xc5, 0x42),
     shadow: Color32::from_black_alpha(70),
+    raised_shadow: Color32::from_black_alpha(120),
 };
 
 pub fn palette(ui: &egui::Ui) -> Palette {
@@ -199,6 +259,16 @@ pub fn card_shadow(p: &Palette) -> Shadow {
         blur: 6,
         spread: 0,
         color: p.shadow,
+    }
+}
+
+/// The deeper shadow under a raised card, such as a task opened for editing.
+pub fn raised_shadow(p: &Palette) -> Shadow {
+    Shadow {
+        offset: [0, 3],
+        blur: 14,
+        spread: 0,
+        color: p.raised_shadow,
     }
 }
 

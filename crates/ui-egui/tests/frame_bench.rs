@@ -267,6 +267,12 @@ fn seed(store: &SqliteStore, clock: &FixedClock) {
     for id in work.iter().step_by(4) {
         store.set_done(*id, true).unwrap();
     }
+    // A checklist (third level) under the running to-do, one item done.
+    let checklist: Vec<_> = ["Webhook signatures", "Retry on 5xx", "Idempotency keys"]
+        .into_iter()
+        .map(|title| store.add(title, Placement::Under(work[1])).unwrap().meta.id)
+        .collect();
+    store.set_done(checklist[0], true).unwrap();
     store.beat().unwrap();
 }
 
@@ -369,17 +375,60 @@ fn screenshots() {
                 let name = format!("{prefix}{}-{suffix}.png", screen.to_lowercase());
                 save(&mut h, &dir.join(name));
             }
-            if seeded {
-                // Hover states: a task row, and a sidebar row.
-                open(&mut h, "Today");
-                h.hover_at(egui::pos2(420.0, 437.0));
-                h.run_steps(30);
-                save(&mut h, &dir.join(format!("today-hover-{suffix}.png")));
-                h.hover_at(egui::pos2(100.0, 186.0));
-                h.run_steps(30);
-                save(&mut h, &dir.join(format!("sidebar-hover-{suffix}.png")));
-            }
         }
+        if seeded {
+            today_states(&mut h, &dir);
+        }
+    }
+}
+
+/// The Today list's interactive states in both themes: a hovered row, a
+/// selected row and a task open for editing. A sidebar hover rides along.
+fn today_states(h: &mut Harness<'_, WfhApp<SqliteStore>>, dir: &std::path::Path) {
+    for (theme, suffix) in [(egui::Theme::Light, "light"), (egui::Theme::Dark, "dark")] {
+        h.ctx.set_theme(theme);
+        open(h, "Today");
+        let row = |h: &Harness<'_, WfhApp<SqliteStore>>, title: &str| h.get_by_label(title).rect();
+
+        let hovered = row(h, "Idempotency keys");
+        h.hover_at(hovered.center() + egui::vec2(200.0, 0.0));
+        h.run_steps(30);
+        save(h, &dir.join(format!("today-hover-{suffix}.png")));
+
+        // A click on the row itself (not its checkbox) selects it.
+        let selected = row(h, "Fix flaky CI job").center() + egui::vec2(200.0, 0.0);
+        click_at(h, selected);
+        h.hover_at(egui::pos2(20.0, SIZE.y - 10.0));
+        h.run_steps(30);
+        save(h, &dir.join(format!("today-selected-{suffix}.png")));
+
+        h.hover_at(row(h, "Checkout redesign").center() + egui::vec2(300.0, 0.0));
+        h.run_steps(30);
+        h.get_by_label("Edit").click();
+        h.hover_at(egui::pos2(20.0, SIZE.y - 10.0));
+        h.run_steps(30);
+        save(h, &dir.join(format!("today-edit-{suffix}.png")));
+        h.get_by_label("Cancel").click();
+        h.run_steps(4);
+
+        h.hover_at(egui::pos2(100.0, 186.0));
+        h.run_steps(30);
+        save(h, &dir.join(format!("sidebar-hover-{suffix}.png")));
+    }
+}
+
+/// A primary click at `pos`, as offscreen input events.
+fn click_at(h: &mut Harness<'_, WfhApp<SqliteStore>>, pos: egui::Pos2) {
+    h.hover_at(pos);
+    h.step();
+    for pressed in [true, false] {
+        h.event(egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::default(),
+        });
+        h.step();
     }
 }
 

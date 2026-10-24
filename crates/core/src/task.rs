@@ -95,3 +95,29 @@ fn tree(task: &Task, all: &[Task], day: Date, tz: &TimeZone) -> Option<TaskTree>
         progress,
     })
 }
+
+/// The order the Today list draws `view` in, Things-style: loose to-dos
+/// before projects (tasks with sub-tasks), and at every level open tasks
+/// before done ones. Both sorts are stable, so creation order holds within
+/// each part. Only the display changes; stored order is untouched.
+pub fn display_order(mut view: Vec<TaskTree>) -> Vec<TaskTree> {
+    view.sort_by_key(|t| (t.progress.is_some(), t.task.is_done()));
+    for tree in &mut view {
+        open_first(&mut tree.children);
+    }
+    view
+}
+
+fn open_first(trees: &mut [TaskTree]) {
+    trees.sort_by_key(|t| t.task.is_done());
+    for tree in trees {
+        open_first(&mut tree.children);
+    }
+}
+
+/// Whether a row shows its category tag: top-level rows always do, and a
+/// task below only when its category differs from its parent's, so the tag
+/// adds information instead of repeating the heading's.
+pub fn shows_tag(task: &Task, parent: Option<&Task>) -> bool {
+    parent.is_none_or(|p| p.category_id != task.category_id)
+}
