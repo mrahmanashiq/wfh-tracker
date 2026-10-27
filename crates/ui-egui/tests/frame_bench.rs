@@ -22,10 +22,10 @@ use jiff::civil::Weekday;
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp, ToSpan};
 use wt_core::{
-    Autostart, AutostartError, BlockDraft, BlockRepo, CategoryRepo, Clipboard, ClipboardError,
-    Clock, DistractionEventRepo, DistractionRuleRepo, FixedClock, ForegroundWatcher,
-    ForegroundWindow, Notifier, Period, Placement, SessionRepo, TargetRepo, TaskRepo, TimerTarget,
-    WatchContext, Weekdays,
+    Autostart, AutostartError, BlockDraft, BlockRepo, CallSensor, CategoryRepo, Clipboard,
+    ClipboardError, Clock, DistractionEventRepo, DistractionRuleRepo, FixedClock,
+    ForegroundWatcher, ForegroundWindow, Notifier, Period, Placement, SessionRepo, TargetRepo,
+    TaskRepo, TimerTarget, WatchContext, Weekdays,
 };
 use wt_storage::SqliteStore;
 use wt_ui_egui::{Services, UiFonts, WfhApp};
@@ -60,6 +60,11 @@ impl Notifier for Quiet {
 impl ForegroundWatcher for Quiet {
     fn foreground(&self) -> Option<ForegroundWindow> {
         None
+    }
+}
+impl CallSensor for Quiet {
+    fn in_call(&self) -> bool {
+        false
     }
 }
 impl Clipboard for Quiet {
@@ -330,6 +335,7 @@ fn app_with(
                 autostart: Box::new(Quiet),
                 notifier: Box::new(Quiet),
                 foreground: Box::new(Quiet),
+                calls: Box::new(Quiet),
                 fonts: system_fonts(),
                 updater: None,
                 clipboard: Box::new(Quiet),

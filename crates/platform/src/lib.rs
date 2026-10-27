@@ -7,6 +7,7 @@ mod foreground;
 mod hotkey;
 mod icon_art;
 mod notify;
+mod teams_call;
 mod tray;
 mod updater;
 
@@ -21,6 +22,7 @@ pub use foreground::OsForegroundWatcher;
 pub use hotkey::MeetingHotkey;
 pub use icon_art::app_icon_rgba;
 pub use notify::{APP_ID, DesktopNotifier, register_notifications};
+pub use teams_call::TeamsCallSensor;
 pub use tray::{Tray, TrayAction};
 pub use updater::ReleaseUpdater;
 

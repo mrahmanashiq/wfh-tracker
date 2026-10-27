@@ -29,6 +29,7 @@ fn fresh_database_loads_the_spec_defaults() {
             workdays: vec![Sunday, Monday, Tuesday, Wednesday, Thursday],
             autostart: true,
             appearance: Appearance::Light,
+            detect_teams_calls: true,
         }
     );
 }
@@ -47,6 +48,7 @@ fn saved_settings_load_back() {
         workdays: vec![Monday, Tuesday, Wednesday, Thursday, Friday],
         autostart: false,
         appearance: Appearance::Dark,
+        detect_teams_calls: false,
     };
 
     store.save(&mine).unwrap();

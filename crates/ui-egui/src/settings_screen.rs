@@ -108,6 +108,13 @@ impl SettingsScreen {
                     ui.checkbox(&mut d.autostart, "Start at login");
                     ui.end_row();
 
+                    ui.label("");
+                    ui.checkbox(&mut d.detect_teams_calls, "Track Teams calls as meetings")
+                        .on_hover_text(
+                            "Starts a meeting when a Teams call has held the microphone for                              20 seconds, and resumes your task when the call ends.",
+                        );
+                    ui.end_row();
+
                     ui.label("Appearance");
                     ui.horizontal(|ui| {
                         for choice in Appearance::ALL {

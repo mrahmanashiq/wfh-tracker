@@ -7,19 +7,21 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 use jiff::{SignedDuration, Timestamp};
 use wt_core::{
-    CategoryKind, CategoryRepo, FixedClock, Notifier, Placement, SessionRepo, Settings, Task,
-    TaskRepo, TimerTarget,
+    CallAction, CategoryKind, CategoryRepo, FixedClock, Notifier, Placement, SessionRepo, Settings,
+    Task, TaskRepo, TimerTarget,
 };
 use wt_storage::SqliteStore;
 use wt_ui_egui::StatusBar;
 use wt_ui_egui::{OfficeTone, office_tone};
 
+/// Titles in `.0`, bodies in `.1`.
 #[derive(Default)]
-struct FakeNotifier(RefCell<Vec<String>>);
+struct FakeNotifier(RefCell<Vec<String>>, RefCell<Vec<String>>);
 
 impl Notifier for FakeNotifier {
-    fn notify(&self, title: &str, _body: &str) {
+    fn notify(&self, title: &str, body: &str) {
         self.0.borrow_mut().push(title.to_owned());
+        self.1.borrow_mut().push(body.to_owned());
     }
 }
 
@@ -87,6 +89,77 @@ impl State {
     fn running_kind(&self) -> Option<CategoryKind> {
         self.store.running().unwrap().map(|s| s.kind)
     }
+
+    fn call(&mut self, action: CallAction) {
+        self.bar.call_meeting(action, &self.store, &self.notifier);
+    }
+
+    fn toasts(&self) -> Vec<(String, String)> {
+        let titles = self.notifier.0.borrow().clone();
+        titles
+            .into_iter()
+            .zip(self.notifier.1.borrow().clone())
+            .collect()
+    }
+}
+
+fn toast(title: &str, body: &str) -> (String, String) {
+    (title.to_owned(), body.to_owned())
+}
+
+#[test]
+fn a_teams_call_pauses_the_task_for_a_meeting_and_resumes_it_after() {
+    let mut h = harness();
+    h.state().start_checkout();
+    h.state_mut().call(CallAction::StartMeeting);
+    assert_eq!(h.state().running_kind(), Some(CategoryKind::Meeting));
+
+    h.state().later(30);
+    h.state_mut().call(CallAction::EndMeeting);
+    let running = h.state().store.running().unwrap().unwrap();
+    assert_eq!(running.task_id, Some(h.state().checkout.meta.id));
+    assert_eq!(
+        h.state().toasts(),
+        [
+            toast(
+                "Teams meeting detected",
+                "Tracking it as a meeting. Checkout resumes when the call ends."
+            ),
+            toast("Teams meeting ended", "Back to Checkout."),
+        ]
+    );
+}
+
+#[test]
+fn a_teams_call_with_nothing_running_just_tracks_the_meeting() {
+    let mut h = harness();
+    h.state_mut().call(CallAction::StartMeeting);
+    h.state().later(30);
+    h.state_mut().call(CallAction::EndMeeting);
+    assert_eq!(h.state().running_kind(), None);
+    assert_eq!(
+        h.state().toasts(),
+        [
+            toast("Teams meeting detected", "Tracking it as a meeting."),
+            toast("Teams meeting ended", "Meeting time saved."),
+        ]
+    );
+}
+
+#[test]
+fn a_call_action_that_matches_the_timer_already_does_nothing() {
+    let mut h = harness();
+    h.state().start_checkout();
+    // No meeting runs, so there's none to end: the task keeps going.
+    h.state_mut().call(CallAction::EndMeeting);
+    assert_eq!(h.state().running_kind(), Some(CategoryKind::Office));
+
+    h.get_by_label("Meeting").click();
+    h.run();
+    // A meeting already runs: starting one must not toggle it off.
+    h.state_mut().call(CallAction::StartMeeting);
+    assert_eq!(h.state().running_kind(), Some(CategoryKind::Meeting));
+    assert!(h.state().toasts().is_empty());
 }
 
 #[test]

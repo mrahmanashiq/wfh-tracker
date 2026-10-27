@@ -6,6 +6,7 @@
 
 pub mod autostart;
 pub mod block;
+pub mod call;
 pub mod category;
 pub mod clipboard;
 pub mod clock;
@@ -26,6 +27,7 @@ pub mod updates;
 
 pub use autostart::{Autostart, AutostartError};
 pub use block::{Block, BlockDraft, Weekdays, active_block, clock_text};
+pub use call::{CALL_END_AFTER, CALL_START_AFTER, CallAction, CallSensor, CallWatch};
 pub use category::{Category, CategoryKind, NewCategory, ParseError, Rgb};
 pub use clipboard::{Clipboard, ClipboardError};
 pub use clock::{Clock, FixedClock};

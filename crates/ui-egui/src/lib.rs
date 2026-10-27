@@ -22,8 +22,8 @@ use std::time::{Duration, Instant};
 
 use egui::{Context, ViewportCommand};
 use wt_core::{
-    Autostart, BlockRepo, Clock, DistractionEventRepo, DistractionRuleRepo, ForegroundWatcher,
-    Notifier, SessionRepo, SettingsRepo, TaskRepo,
+    Autostart, BlockRepo, CallSensor, CallWatch, Clock, DistractionEventRepo, DistractionRuleRepo,
+    ForegroundWatcher, Notifier, SessionRepo, SettingsRepo, TaskRepo,
 };
 
 use crate::theme::{size, space};
@@ -120,6 +120,8 @@ pub struct WfhApp<S> {
     autostart: Box<dyn Autostart>,
     notifier: Box<dyn Notifier>,
     foreground: Box<dyn ForegroundWatcher>,
+    calls: Box<dyn CallSensor>,
+    call_watch: CallWatch,
     commands: Receiver<ShellCommand>,
     last_tick: Option<Instant>,
     last_poll: Option<Instant>,
@@ -170,6 +172,8 @@ pub struct Services {
     pub notifier: Box<dyn Notifier>,
     /// Reads the window in front, for distraction nudges.
     pub foreground: Box<dyn ForegroundWatcher>,
+    /// Tells whether a Teams call holds the microphone, for automatic meetings.
+    pub calls: Box<dyn CallSensor>,
     /// Fonts to use instead of egui's built-in one, e.g. Segoe UI.
     pub fonts: Option<UiFonts>,
     /// `None` in development builds.
@@ -200,6 +204,8 @@ impl<S: Store> WfhApp<S> {
             autostart: services.autostart,
             notifier: services.notifier,
             foreground: services.foreground,
+            calls: services.calls,
+            call_watch: CallWatch::default(),
             commands,
             last_tick: None,
             last_poll: None,
@@ -225,6 +231,27 @@ impl<S: Store> WfhApp<S> {
             appearance: None,
         };
         (app, handle)
+    }
+}
+
+impl<S: Store> WfhApp<S> {
+    /// Starts a meeting while a Teams call holds the mic and ends it after.
+    fn watch_calls(&mut self, settings: &wt_core::Settings) {
+        if !settings.detect_teams_calls {
+            self.call_watch.reset();
+            return;
+        }
+        let Ok(running) = SessionRepo::running(&self.store) else {
+            return;
+        };
+        let meeting = running.is_some_and(|s| s.is_meeting());
+        let action = self
+            .call_watch
+            .observe(self.calls.in_call(), meeting, self.clock.now());
+        if let Some(action) = action {
+            self.status
+                .call_meeting(action, &self.store, self.notifier.as_ref());
+        }
     }
 }
 
@@ -270,6 +297,7 @@ impl<S: Store> eframe::App for WfhApp<S> {
                 )
                 .err()
                 .map(|e| e.to_string());
+            self.watch_calls(&settings);
         }
         if self.last_tick.is_none_or(|t| t.elapsed() >= TICK_EVERY) {
             self.last_tick = Some(Instant::now());

@@ -131,3 +131,16 @@ fn appearance_defaults_to_light_and_dark_can_be_chosen() {
 
     assert_eq!(h.state().repo.load().unwrap().appearance, Appearance::Dark);
 }
+
+#[test]
+fn teams_call_tracking_is_on_by_default_and_can_be_switched_off() {
+    let mut h = harness();
+    assert!(h.state().repo.load().unwrap().detect_teams_calls);
+
+    h.get_by_label("Track Teams calls as meetings").click();
+    h.run();
+    h.get_by_label("Save").click();
+    h.run();
+
+    assert!(!h.state().repo.load().unwrap().detect_teams_calls);
+}

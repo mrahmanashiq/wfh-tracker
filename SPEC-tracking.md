@@ -15,6 +15,7 @@ Record where time actually goes, and keep the office day near 8 hours. One timer
 3. A **status bar**, always visible, shows the running task and its elapsed time, plus today's office clock: `6h 12m / 8h`.
 4. Every **N minutes of continuous work** (default 25, or the task's own value) I get a **break reminder**. **Take break** starts a break timer and pauses work. When the break length (default 5 min) has passed, I get "Break over" and a **Resume ‹task›** button.
 5. I press **Meeting** (a button in the status bar, or the global hotkey **Ctrl+Alt+M**) when a Teams call starts. The current timer stops and a meeting timer starts. Pressing it again ends the meeting and **automatically restarts the timer of the task the meeting interrupted** (changed 2026-10-22 at the user's request; it used to offer a Resume button).
+9. **Teams calls track themselves** (added 2026-10-27 at the user's request): when a Teams call has held the microphone for 20 s, a meeting starts as if I had pressed Meeting, and a toast says so. When the call frees the mic for 15 s, the meeting ends and my task resumes, with a second toast. A Settings switch, on by default, turns this off.
 6. At **8h** of office time I get "Office day complete — wrap up". At **9h**, a soft warning. Time beyond 9h shows as **overtime**. On a weekend day (Fri/Sat) there's no 8h reminder, and all office time is overtime.
 
 ## Domain rules
@@ -32,6 +33,8 @@ Record where time actually goes, and keep the office day near 8 hours. One timer
 | Ticks | The app re-checks reminders every 15 s, also while hidden in the tray (via `logic()`). |
 | Heartbeat | Every tick stores `now` as the heartbeat. If a timer is running and the last heartbeat is more than 3 min old (the app was closed, or the PC slept), the timer is ended at the last heartbeat, and the stop is reported. |
 | Quick start | Starts a session with a category and no task. Same one-active rule. |
+| Teams call | Teams holds the mic for the whole call, muted or not. Windows records each app's mic use under `HKCU\…\CapabilityAccessManager\ConsentStore\microphone`; Teams is in a call while its entry (`MSTeams_*`, or classic `…#Teams.exe` under `NonPackaged`) has `LastUsedTimeStop = 0`. Only those entries are read, every 5 s, and nothing about them is stored. |
+| Call → meeting | `CallWatch`: mic in use for 20 s starts a meeting, or adopts one already running. Mic free for 15 s ends the meeting it started or adopted, which resumes the interrupted task. If I end or replace that meeting during the call, it isn't restarted until the call is over. Meeting names aren't read (that needs window titles); the meeting is plain "Meeting". |
 
 ## Architecture
 
@@ -78,3 +81,5 @@ Session table: `id, task_id NULL → task, category_id → category, kind, start
 - **Test seams:** office clock functions, the `Reminders` state machine, `SessionRepo` on SQLite, and the status bar plus Start/Stop via kittest. Real toasts and the hotkey are checked by hand.
 
 Success criterion 8: a timer left running across a 2 h gap with no heartbeat ends at the last heartbeat, not at "now".
+
+Success criterion 9: `CallWatch` ignores a 15 s mic test, starts a meeting at 20 s of mic use, rides out a 10 s drop mid-call, and ends the meeting 15 s after the mic frees; the status bar toasts both and resumes the interrupted task. `TeamsCallSensor` is checked by hand with `cargo run -p wt-platform --example teams_call` during a real call.

@@ -14,6 +14,8 @@ pub struct Settings {
     pub workdays: Vec<Weekday>,
     pub autostart: bool,
     pub appearance: Appearance,
+    /// Start and end a meeting by itself while a Teams call holds the mic.
+    pub detect_teams_calls: bool,
 }
 
 /// Light or dark window, or whichever Windows uses.
@@ -63,6 +65,7 @@ impl Default for Settings {
             workdays: vec![Sunday, Monday, Tuesday, Wednesday, Thursday],
             autostart: true,
             appearance: Appearance::Light,
+            detect_teams_calls: true,
         }
     }
 }
@@ -105,6 +108,7 @@ impl Settings {
             ("workdays", workdays.join(",")),
             ("autostart", self.autostart.to_string()),
             ("appearance", self.appearance.as_str().to_owned()),
+            ("detect_teams_calls", self.detect_teams_calls.to_string()),
         ]
     }
 
@@ -140,6 +144,9 @@ impl Settings {
                 }
                 "autostart" => s.autostart = value.parse().map_err(|_| invalid())?,
                 "appearance" => s.appearance = Appearance::parse(value).ok_or_else(invalid)?,
+                "detect_teams_calls" => {
+                    s.detect_teams_calls = value.parse().map_err(|_| invalid())?;
+                }
                 _ => {}
             }
         }

@@ -3,9 +3,9 @@ use jiff::{SignedDuration, Timestamp};
 use wt_core::clock_text as time_of_day;
 use wt_core::repo::RepoResult;
 use wt_core::{
-    Block, CategoryKind, Clock, MeetingToggle, Notice, Notifier, OfficeStatus, Reminders, Session,
-    SessionRepo, Settings, Tick, TimerTarget, active_block, hours_text, office_status, office_time,
-    target_text, tracked_time,
+    Block, CallAction, CategoryKind, Clock, MeetingToggle, Notice, Notifier, OfficeStatus,
+    Reminders, Session, SessionRepo, Settings, Tick, TimerTarget, active_block, hours_text,
+    office_status, office_time, target_text, tracked_time,
 };
 
 use crate::theme::{Palette, palette, size, space};
@@ -287,6 +287,50 @@ impl StatusBar {
     /// The Meeting button and the global hotkey both land here.
     pub fn toggle_meeting(&mut self, store: &dyn SessionRepo) {
         self.apply(Action::ToggleMeeting, store);
+    }
+
+    /// Starts or ends the meeting for a Teams call and says so in a toast.
+    /// Does nothing when the timer is already in the state asked for.
+    pub fn call_meeting(
+        &mut self,
+        action: CallAction,
+        store: &dyn SessionRepo,
+        notifier: &dyn Notifier,
+    ) {
+        let before = match store.running() {
+            Ok(running) => running,
+            Err(e) => {
+                self.message = Some(e.to_string());
+                return;
+            }
+        };
+        let in_meeting = before.as_ref().is_some_and(Session::is_meeting);
+        if in_meeting != (action == CallAction::EndMeeting) {
+            return;
+        }
+        self.apply(Action::ToggleMeeting, store);
+        if self.message.is_some() {
+            return;
+        }
+        let body = match action {
+            // A break isn't resumed after a meeting, so it isn't named.
+            CallAction::StartMeeting => match before.filter(|s| !s.is_break()) {
+                Some(work) => format!(
+                    "Tracking it as a meeting. {} resumes when the call ends.",
+                    session_label(store, &work)
+                ),
+                None => "Tracking it as a meeting.".to_owned(),
+            },
+            CallAction::EndMeeting => match store.running().ok().flatten() {
+                Some(resumed) => format!("Back to {}.", session_label(store, &resumed)),
+                None => "Meeting time saved.".to_owned(),
+            },
+        };
+        let title = match action {
+            CallAction::StartMeeting => "Teams meeting detected",
+            CallAction::EndMeeting => "Teams meeting ended",
+        };
+        notifier.notify(title, &body);
     }
 
     /// Recovers a timer left running across a gap, then turns due reminders

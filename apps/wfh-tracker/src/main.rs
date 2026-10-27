@@ -70,6 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 autostart: Box::new(autostart),
                 notifier: Box::new(DesktopNotifier),
                 foreground: Box::new(OsForegroundWatcher),
+                calls: Box::new(wt_platform::TeamsCallSensor),
                 fonts: segoe_ui(),
                 updater: release_updater(),
                 clipboard: Box::new(SystemClipboard),
