@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use egui::text::{LayoutJob, TextWrapping};
 use egui::{
@@ -46,7 +46,7 @@ pub struct TasksScreen {
     confirm_delete: Option<Id>,
     message: Option<String>,
     /// The task whose timer is running; refreshed every frame.
-    running: Option<Id>,
+    running: HashSet<Id>,
     /// The row under the pointer last frame; only it fades its actions in.
     hovered: Option<Id>,
     /// The row under the pointer this frame, found while drawing.
@@ -74,7 +74,7 @@ enum Action {
     OpenRename(EditDraft),
     Rename,
     Start(Id),
-    Stop,
+    Stop(Id),
     Delete(Id),
     ArmDelete(Option<Id>),
     Close,
@@ -151,14 +151,17 @@ impl TasksScreen {
         let tasks: &dyn TaskRepo = store;
         let categories: &dyn CategoryRepo = store;
         let now = clock.now();
-        let running = store.running().ok().flatten();
-        self.running = running.as_ref().and_then(|s| s.task_id);
         let sessions = store
             .sessions_since(
                 now.checked_sub(SignedDuration::from_hours(48))
                     .unwrap_or(now),
             )
             .unwrap_or_default();
+        self.running = sessions
+            .iter()
+            .filter(|s| s.is_running())
+            .filter_map(|s| s.task_id)
+            .collect();
 
         let loaded = categories.list().and_then(|c| Ok((c, tasks.list_live()?)));
         let (cats, all) = match loaded {
@@ -312,7 +315,7 @@ impl TasksScreen {
             return;
         }
         let p = palette(ui);
-        let running = self.running == Some(id);
+        let running = self.running.contains(&id);
 
         // The row's own click (selection) is registered first, so the
         // checkbox and the icons drawn over it win their clicks.
@@ -376,7 +379,7 @@ impl TasksScreen {
                     row_actions(ui, row, running, hover, action);
                     if running {
                         if timer_capsule(ui, &elapsed(row.time)).clicked() {
-                            *action = Some(Action::Stop);
+                            *action = Some(Action::Stop(id));
                         }
                     } else if row.time.is_positive() {
                         ui.label(
@@ -480,7 +483,7 @@ impl TasksScreen {
                 None => Ok(()),
             },
             Action::Start(id) => store.start(TimerTarget::Task(id)).map(|_| ()),
-            Action::Stop => store.stop().map(|_| ()),
+            Action::Stop(id) => store.stop_target(TimerTarget::Task(id)).map(|_| ()),
             Action::Delete(id) => {
                 self.confirm_delete = None;
                 tasks.delete(id)

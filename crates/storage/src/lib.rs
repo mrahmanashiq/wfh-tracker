@@ -25,6 +25,7 @@ fn migrations() -> Migrations<'static> {
         M::up(include_str!("migrations/003_tracking.sql")),
         M::up(include_str!("migrations/004_planning.sql")),
         M::up(include_str!("migrations/005_nudges.sql")),
+        M::up(include_str!("migrations/006_concurrent_tasks.sql")),
     ])
 }
 

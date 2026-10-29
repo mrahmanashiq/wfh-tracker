@@ -207,13 +207,14 @@ pub trait TaskRepo {
 }
 
 /// Tracked time. Backends implement the primitives; the provided methods hold
-/// the rules (one running session, meetings, breaks, heartbeat recovery).
+/// the rules (independent task timers, meetings, breaks, heartbeat recovery).
 pub trait SessionRepo: TaskRepo + CategoryRepo {
     /// The running session, if any.
     fn running(&self) -> RepoResult<Option<Session>>;
     /// Live sessions still running or ended after `since`, oldest first.
     fn sessions_since(&self, since: jiff::Timestamp) -> RepoResult<Vec<Session>>;
-    /// In one transaction: ends the running session now and starts a new one.
+    /// In one transaction: ends the active contextual session, if any, and
+    /// starts a new session. Task sessions can run concurrently.
     fn switch_to(
         &self,
         task_id: Option<Id>,
@@ -222,6 +223,12 @@ pub trait SessionRepo: TaskRepo + CategoryRepo {
     ) -> RepoResult<Switch>;
     /// Ends the running session at `at` (default now); returns it.
     fn end_running(&self, at: Option<jiff::Timestamp>) -> RepoResult<Option<Session>>;
+    /// Ends one specific session at `at` (default now); returns it.
+    fn end_session(
+        &self,
+        id: Id,
+        at: Option<jiff::Timestamp>,
+    ) -> RepoResult<Option<Session>>;
     /// Records that the app is alive now.
     fn beat(&self) -> RepoResult<()>;
     fn last_heartbeat(&self) -> RepoResult<Option<jiff::Timestamp>>;
@@ -238,6 +245,15 @@ pub trait SessionRepo: TaskRepo + CategoryRepo {
 
     fn stop(&self) -> RepoResult<Option<Session>> {
         self.end_running(None)
+    }
+
+    fn stop_target(&self, target: TimerTarget) -> RepoResult<Option<Session>> {
+        let session = self
+            .sessions_since(jiff::Timestamp::MIN)?
+            .into_iter()
+            .rev()
+            .find(|s| s.is_running() && target.matches(s));
+        session.map_or(Ok(None), |s| self.end_session(s.meta.id, None))
     }
 
     /// Ends work and starts a break session.

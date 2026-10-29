@@ -65,7 +65,7 @@ impl World {
 }
 
 #[test]
-fn starting_another_task_ends_the_running_one_at_the_same_instant() {
+fn starting_another_task_leaves_the_first_task_running() {
     let w = world();
     w.store
         .start(TimerTarget::Task(w.checkout.meta.id))
@@ -76,9 +76,9 @@ fn starting_another_task_ends_the_running_one_at_the_same_instant() {
 
     let all = w.all();
     assert_eq!(all.len(), 2);
-    assert_eq!(all[0].ended_at, Some(at("2026-10-22T03:30:00Z")));
+    assert_eq!(all[0].ended_at, None);
     assert_eq!(all[1].started_at, at("2026-10-22T03:30:00Z"));
-    assert_eq!(w.running().unwrap().task_id, Some(w.api.meta.id));
+    assert_eq!(all.iter().filter(|s| s.is_running()).count(), 2);
 }
 
 #[test]

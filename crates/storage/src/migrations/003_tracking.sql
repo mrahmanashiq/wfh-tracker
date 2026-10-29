@@ -1,4 +1,5 @@
--- Tracked time. At most one running session (ended_at IS NULL) at a time.
+-- Tracked time. Task sessions may run concurrently; contextual sessions remain
+-- exclusive through the repository rules.
 
 ALTER TABLE task ADD COLUMN break_interval_min INTEGER CHECK (break_interval_min > 0);
 
@@ -16,7 +17,3 @@ CREATE TABLE session (
 ) STRICT;
 
 CREATE INDEX session_started ON session (started_at);
-
--- The database itself refuses a second running session.
-CREATE UNIQUE INDEX session_one_running ON session (ended_at IS NULL)
-    WHERE ended_at IS NULL AND deleted_at IS NULL;

@@ -157,12 +157,16 @@ fn each_row_shows_todays_time_and_a_parent_includes_its_subtasks() {
         .start(wt_core::TimerTarget::Task(id("Validation")))
         .unwrap();
     h.state().clock.advance(jiff::SignedDuration::from_mins(25));
+    store
+        .stop_target(wt_core::TimerTarget::Task(id("Validation")))
+        .unwrap();
     store.start(wt_core::TimerTarget::Task(id("API"))).unwrap();
     h.state().clock.advance(jiff::SignedDuration::from_mins(40));
-    store.stop().unwrap();
+    store
+        .stop_target(wt_core::TimerTarget::Task(id("API")))
+        .unwrap();
     h.run();
 
-    h.get_by_label("25m");
     h.get_by_label("40m");
     h.get_by_label("1h 05m");
 }

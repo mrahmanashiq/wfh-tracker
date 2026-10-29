@@ -92,6 +92,29 @@ impl SqliteStore {
         }
         Ok(running)
     }
+
+    fn end_context_at(&self, at: &str) -> RepoResult<Option<String>> {
+        let running: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT id FROM session
+                 WHERE ended_at IS NULL AND deleted_at IS NULL AND task_id IS NULL
+                 ORDER BY started_at DESC, id DESC LIMIT 1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(backend)?;
+        if let Some(id) = &running {
+            self.conn
+                .execute(
+                    "UPDATE session SET ended_at = ?2, updated_at = ?3 WHERE id = ?1",
+                    params![id, at, self.now()],
+                )
+                .map_err(backend)?;
+        }
+        Ok(running)
+    }
 }
 
 impl SessionRepo for SqliteStore {
@@ -99,7 +122,9 @@ impl SessionRepo for SqliteStore {
         self.conn
             .query_row(
                 &format!(
-                    "SELECT {COLUMNS} FROM session WHERE ended_at IS NULL AND deleted_at IS NULL"
+                    "SELECT {COLUMNS} FROM session
+                     WHERE ended_at IS NULL AND deleted_at IS NULL
+                     ORDER BY started_at DESC, id DESC LIMIT 1"
                 ),
                 [],
                 SessionRow::read,
@@ -135,7 +160,11 @@ impl SessionRepo for SqliteStore {
     ) -> RepoResult<Switch> {
         let now = self.now();
         let tx = self.conn.unchecked_transaction().map_err(backend)?;
-        let ended = self.end_running_at(&now)?;
+        let ended = if task_id.is_none() {
+            self.end_running_at(&now)?
+        } else {
+            self.end_context_at(&now)?
+        };
         let id = Id::new().to_string();
         tx.execute(
             "INSERT INTO session (id, task_id, category_id, kind, started_at, created_at, updated_at)
@@ -161,6 +190,23 @@ impl SessionRepo for SqliteStore {
         self.end_running_at(&at)?
             .map(|id| self.session(&id))
             .transpose()
+    }
+
+    fn end_session(&self, id: Id, at: Option<Timestamp>) -> RepoResult<Option<Session>> {
+        let at = at.map_or_else(|| self.now(), format_ts);
+        let id_text = id.to_string();
+        let changed = self
+            .conn
+            .execute(
+                "UPDATE session SET ended_at = ?2, updated_at = ?3
+                 WHERE id = ?1 AND ended_at IS NULL AND deleted_at IS NULL",
+                params![id_text, at, self.now()],
+            )
+            .map_err(backend)?;
+        if changed == 0 {
+            return Ok(None);
+        }
+        self.session(&id.to_string()).map(Some)
     }
 
     fn beat(&self) -> RepoResult<()> {

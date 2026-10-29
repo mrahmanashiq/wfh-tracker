@@ -266,6 +266,10 @@ impl<S: SessionRepo> SessionRepo for CachedStore<S> {
         self.write(|s| s.end_running(at))
     }
 
+    fn end_session(&self, id: Id, at: Option<Timestamp>) -> RepoResult<Option<Session>> {
+        self.write(|s| s.end_session(id, at))
+    }
+
     fn beat(&self) -> RepoResult<()> {
         self.write(S::beat)
     }
@@ -281,6 +285,10 @@ impl<S: SessionRepo> SessionRepo for CachedStore<S> {
 
     fn stop(&self) -> RepoResult<Option<Session>> {
         self.write(S::stop)
+    }
+
+    fn stop_target(&self, target: TimerTarget) -> RepoResult<Option<Session>> {
+        self.write(|s| s.stop_target(target))
     }
 
     fn take_break(&self) -> RepoResult<Switch> {

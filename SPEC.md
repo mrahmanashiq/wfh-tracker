@@ -190,7 +190,7 @@ Every rule in the *Domain rules* table has at least one unit test. Bugs get a fa
 
 ## Success Criteria
 
-1. Start → stop on a sub-task creates exactly one session row; starting another task closes the running session in the same transaction.
+1. Start → stop on a sub-task creates exactly one session row; starting another task leaves existing task sessions running so tasks can be tracked concurrently.
 2. With a fake clock: 8h00m office time emits `TargetReached` once, 9h00m emits `SoftCeiling` once, 9h30m reports `Overtime { minutes: 30 }`. The timer is never stopped automatically.
 3. Break sessions are excluded from office time. A session crossing midnight is split correctly between the two days.
 4. Pressing the Meeting hotkey during an office task pauses it, records a meeting session, and offers to resume the task when the meeting ends.
