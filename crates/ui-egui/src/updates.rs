@@ -86,28 +86,15 @@ impl UpdateController {
         }
     }
 
-    /// The header's update action, available from every screen.
+    /// The header's restart action, shown once an update is ready.
     pub fn header_ui(&mut self, ui: &mut Ui) {
-        let state = self.state();
-        match state {
-            State::Ready(version) => {
-                let p = palette(ui);
-                let label = format!("Restart to update to {version}");
-                let restart = pill(ui, &label, p.accent, Color32::WHITE)
-                    .on_hover_text("Your running timer keeps going across the restart.");
-                if restart.clicked() {
-                    self.install();
-                }
-            }
-            State::Checking | State::Downloading(_) => {}
-            _ => {
-                if self.updater.is_some()
-                    && text_button(ui, "Check for updates", true)
-                        .on_hover_text("Check GitHub for a newer WFH Tracker version.")
-                        .clicked()
-                {
-                    self.check_now(ui.ctx());
-                }
+        if let State::Ready(version) = self.state() {
+            let p = palette(ui);
+            let label = format!("Restart to update to {version}");
+            let restart = pill(ui, &label, p.accent, Color32::WHITE)
+                .on_hover_text("Your running timer keeps going across the restart.");
+            if restart.clicked() {
+                self.install();
             }
         }
     }
@@ -122,6 +109,14 @@ impl UpdateController {
         };
         ui.horizontal(|ui| {
             ui.label(format!("Version {}", updater.current_version()));
+            let busy = matches!(self.state(), State::Checking | State::Downloading(_));
+            if !busy
+                && text_button(ui, "Check for updates", true)
+                    .on_hover_text("Check GitHub for a newer WFH Tracker version.")
+                    .clicked()
+            {
+                self.check_now(ui.ctx());
+            }
         });
         let (text, color) = match self.state() {
             State::Idle => return,

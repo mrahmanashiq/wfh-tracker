@@ -71,6 +71,13 @@ fn harness(updater: Arc<FakeUpdater>) -> Harness<'static, UpdateController> {
     )
 }
 
+fn header_harness(updater: Arc<FakeUpdater>) -> Harness<'static, UpdateController> {
+    Harness::new_ui_state(
+        |ui, c: &mut UpdateController| c.header_ui(ui),
+        UpdateController::new(Some(updater)),
+    )
+}
+
 /// Runs a check and waits for its background thread to finish.
 fn check(h: &mut Harness<'_, UpdateController>) {
     h.get_by_label("Check for updates").click();
@@ -84,6 +91,13 @@ fn shows_the_installed_version() {
     let h = harness(FakeUpdater::offering(None));
 
     h.get_by_label("Version 0.1.0");
+}
+
+#[test]
+fn the_manual_check_is_only_in_settings() {
+    let h = header_harness(FakeUpdater::offering(None));
+
+    assert!(h.query_by_label("Check for updates").is_none());
 }
 
 #[test]
